@@ -46,7 +46,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view v1.0.0 >/dev/null 2>&1; then
-            echo "Release v1.0.0 already exists; not overwriting it."
+            echo "Release v1.0.0 exists; updating its notes only."
+            gh release edit v1.0.0 --notes-file docs/RELEASE_v1.0.0.md
           else
             sha256sum app/build/outputs/apk/debug/app-debug.apk > APK-SHA256.txt
             gh release create v1.0.0 \
