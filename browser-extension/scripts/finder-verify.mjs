@@ -11,7 +11,7 @@ assert.deepEqual(manifest.permissions, ["activeTab", "scripting"]);
 assert.equal(manifest.host_permissions, undefined);
 assert.equal(manifest.content_scripts, undefined);
 const files = readdirSync(dist).sort();
-assert.deepEqual(files, ["background.js", "finder-content.js", "finder-auto.js", "finder-core.js", "finder-fit.js", "finder-text.js", "manifest.json"]);
+assert.deepEqual(files, ["background.js", "finder-auto.js", "finder-content.js", "finder-core.js", "finder-fit.js", "finder-text.js", "manifest.json"]);
 assert.ok(!readFileSync(join(dist, "background.js"), "utf8").includes("Tesseract"));
 assert.ok(!readFileSync(join(dist, "finder-content.js"), "utf8").includes("PT_TRANSLATE"));
 assert.ok(!readFileSync(join(dist, "finder-text.js"), "utf8").includes("recognize("));
