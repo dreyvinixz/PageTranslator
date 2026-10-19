@@ -62,18 +62,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          (cd browser-extension/dist && zip -q -r "$GITHUB_WORKSPACE/$ZIP" .)
-          sha256sum "$ZIP" > "$ZIP.sha256"
-          unzip -t "$ZIP" >/dev/null
+          (cd "$GITHUB_WORKSPACE/browser-extension/dist" && zip -q -r "$GITHUB_WORKSPACE/$ZIP" .)
+          ls -lah "$GITHUB_WORKSPACE/$ZIP"
+          (cd "$GITHUB_WORKSPACE" && sha256sum "$ZIP" > "$ZIP.sha256")
+          unzip -t "$GITHUB_WORKSPACE/$ZIP" >/dev/null
       - name: Create GitHub prerelease and tag
         if: steps.check.outputs.publish == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "$TAG" "$ZIP" "$ZIP.sha256" \
+          gh release create "$TAG" "$GITHUB_WORKSPACE/$ZIP" "$GITHUB_WORKSPACE/$ZIP.sha256" \
             --target "$GITHUB_SHA" \
             --title "PageTranslator Browser v0.2.0 · Preview (Chrome/Edge)" \
-            --notes-file docs/RELEASE_browser_v0.2.0.md \
+            --notes-file "$GITHUB_WORKSPACE/docs/RELEASE_browser_v0.2.0.md" \
             --prerelease \
             --latest=false
       - name: Verify published release
