@@ -10,3 +10,8 @@ local.properties
 *.jks
 *.keystore
 .DS_Store
+
+# Browser extension build artifacts
+browser-extension/node_modules/
+browser-extension/dist/
+browser-extension/*.zip
