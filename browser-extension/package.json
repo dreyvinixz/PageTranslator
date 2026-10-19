@@ -1,16 +1,11 @@
 {
   "name": "pagetranslator-browser",
   "private": true,
-  "version": "0.2.2",
-  "description": "PageTranslator para Chromium Manifest V3",
+  "version": "0.3.0",
+  "description": "PageTranslator Finder diagnostic extension, no OCR",
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "verify": "node scripts/verify.mjs",
-    "test": "node --test tests/*.test.mjs"
-  },
-  "devDependencies": {
-    "@tesseract.js-data/eng": "1.0.0",
-    "tesseract.js": "6.0.1",
-    "tesseract.js-core": "6.0.0"
+    "build": "node scripts/finder-build.mjs",
+    "verify": "node scripts/finder-verify.mjs",
+    "test": "node --test tests/finder.test.mjs"
   }
 }

@@ -1,0 +1,17 @@
+import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
+const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const dist = join(root, "dist");
+const manifest = JSON.parse(readFileSync(join(dist, "manifest.json"), "utf8"));
+assert.equal(manifest.version, "0.3.0");
+assert.equal(manifest.manifest_version, 3);
+assert.deepEqual(manifest.permissions, ["activeTab", "scripting"]);
+assert.equal(manifest.host_permissions, undefined);
+assert.equal(manifest.content_scripts, undefined);
+const files = readdirSync(dist).sort();
+assert.deepEqual(files, ["background.js", "finder-content.js", "finder-core.js", "manifest.json"]);
+assert.ok(!readFileSync(join(dist, "background.js"), "utf8").includes("Tesseract"));
+assert.ok(!readFileSync(join(dist, "finder-content.js"), "utf8").includes("PT_TRANSLATE"));
+console.log("Finder: build mínimo, sem OCR nem serviços externos. Arquivos: " + files.join(", "));
