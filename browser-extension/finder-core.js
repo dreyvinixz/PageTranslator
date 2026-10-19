@@ -24,6 +24,28 @@
     return kept;
   }
 
+  // A padded crop can touch another padded crop without mixing their text.
+  // Flag any crop that would capture another speech's ink, not just shared core ink.
+  function markMixedInkRegions(regions, threshold = 0.12) {
+    if (!Array.isArray(regions)) return [];
+    return regions.map((region, i) => {
+      const a = region.inkRect;
+      const crop = region.rect;
+      const risk = validRect(a) && validRect(crop) && regions.some((other, j) => {
+        if (i === j || !validRect(other.inkRect)) return false;
+        const b = other.inkRect;
+        const minArea = Math.min(a.width * a.height, b.width * b.height);
+        const coreConflict = minArea > 0 && overlapArea(a, b) / minArea > threshold;
+        // The actual OCR uses the OUTER rectangle. If it contains a relevant
+        // portion of someone else's ink, the translation can mix two speeches
+        // even when those two ink cores never directly overlap.
+        const foreignInkInsideCrop = overlapArea(crop, b) / (b.width * b.height) > threshold;
+        return coreConflict || foreignInkInsideCrop;
+      });
+      return { ...region, risk: Boolean(risk) };
+    });
+  }
+
   // Bright, approximately uniform connected regions are only *balloon candidates*.
   // No semantic segmentation, OCR, or external AI services are involved.
   function findLightRegions(image, permittedRects, options = {}) {
@@ -111,5 +133,5 @@
     }
     return dedupe(results, maxResults);
   }
-  scope.PageTranslatorFinderCore = { validRect, overlapArea, dedupe, findLightRegions };
+  scope.PageTranslatorFinderCore = { validRect, overlapArea, dedupe, markMixedInkRegions, findLightRegions };
 })(typeof globalThis !== "undefined" ? globalThis : self);

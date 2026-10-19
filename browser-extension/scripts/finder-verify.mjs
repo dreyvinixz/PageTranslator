@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const dist = join(root, "dist");
 const manifest = JSON.parse(readFileSync(join(dist, "manifest.json"), "utf8"));
-assert.equal(manifest.version, "0.3.1");
+assert.equal(manifest.version, "0.3.2");
 assert.equal(manifest.manifest_version, 3);
 assert.deepEqual(manifest.permissions, ["activeTab", "scripting"]);
 assert.equal(manifest.host_permissions, undefined);
