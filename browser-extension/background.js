@@ -114,13 +114,19 @@ async function captureAuto(message, sender) {
     throw new Error("OCR_INTERVAL: aguarde antes de fazer uma nova captura.");
   }
   autoRunning = true;
+  const progress = (label) => chrome.tabs.sendMessage(tab.id, {
+    type: "PT_SCAN_PROGRESS", scanId: message.scanId, label
+  }).catch(() => {});
   try {
     lastAutoCapture = Date.now();
+    await progress("Capturando a área visível…");
     const screenshot = await bounded(
       chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 82 }),
       12000, "Captura da aba"
     );
+    await progress("Preparando o motor de OCR local…");
     await bounded(ensureOffscreen(), 10000, "Inicialização do OCR");
+    await progress("Reconhecendo textos (pode demorar na primeira execução)…");
     const response = await bounded(chrome.runtime.sendMessage({
       target: "offscreen",
       type: "PT_RECOGNIZE_VIEW",
