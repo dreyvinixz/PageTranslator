@@ -1,0 +1,81 @@
+name: Publish Browser v0.2.0 Preview
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "browser-extension/**"
+      - "docs/RELEASE_browser_v0.2.0.md"
+      - ".github/workflows/release-browser.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: release-browser-v0.2.0
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: browser-v0.2.0
+      ZIP: PageTranslator-browser-v0.2.0-preview.zip
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+      - name: Detect existing release
+        id: check
+        shell: bash
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Release $TAG already exists; leave it unchanged."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Node.js 22
+        if: steps.check.outputs.publish == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install OCR dependencies
+        if: steps.check.outputs.publish == 'true'
+        working-directory: browser-extension
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Test grouping and build
+        if: steps.check.outputs.publish == 'true'
+        working-directory: browser-extension
+        run: |
+          npm test
+          npm run build
+          npm run verify
+          node --check background.js
+          node --check content.js
+          node --check auto-content.js
+          node --check regions.js
+          node --check offscreen.js
+      - name: Package extension and SHA-256
+        if: steps.check.outputs.publish == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd browser-extension/dist && zip -q -r "$GITHUB_WORKSPACE/$ZIP" .)
+          sha256sum "$ZIP" > "$ZIP.sha256"
+          unzip -t "$ZIP" >/dev/null
+      - name: Create GitHub prerelease and tag
+        if: steps.check.outputs.publish == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" "$ZIP" "$ZIP.sha256" \
+            --target "$GITHUB_SHA" \
+            --title "PageTranslator Browser v0.2.0 · Preview (Chrome/Edge)" \
+            --notes-file docs/RELEASE_browser_v0.2.0.md \
+            --prerelease \
+            --latest=false
+      - name: Verify published release
+        if: steps.check.outputs.publish == 'true'
+        run: gh release view "$TAG" --json url,tagName,isPrerelease,assets
