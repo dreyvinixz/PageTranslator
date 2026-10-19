@@ -1,7 +1,7 @@
 {
   "name": "pagetranslator-browser",
   "private": true,
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "PageTranslator Finder diagnostic extension, no OCR",
   "scripts": {
     "build": "node scripts/finder-build.mjs",
