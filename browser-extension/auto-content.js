@@ -13,6 +13,7 @@
   let observer = null, translatorPromise = null, translationCount = 0;
   let visibleRegions = [];
   const cache = new Map();
+  const inFlightTranslations = new Map();
   const styleText = [
     ":host{all:initial;position:fixed;inset:0;z-index:2147483646;pointer-events:none;font-family:system-ui,-apple-system,Segoe UI,sans-serif}",
     "*{box-sizing:border-box}",
@@ -146,21 +147,27 @@
   async function translate(text) {
     const key = text.toLowerCase().replace(/\s+/g, " ").trim();
     if (cache.has(key)) return cache.get(key);
-    let translated = null;
-    const translator = await getTranslator();
-    if (translator) {
-      try { translated = await translator.translate(text); } catch { /* online fallback requires opt-in */ }
-    }
-    if (!translated && onlineAllowed && translationCount < MAX_AUTO_TRANSLATIONS) {
-      translationCount++;
-      const response = await chrome.runtime.sendMessage({ type: "PT_TRANSLATE_REMOTE", text });
-      if (response && response.ok) translated = response.translatedText;
-    }
-    if (translated) {
-      cache.set(key, translated);
-      if (cache.size > 100) cache.delete(cache.keys().next().value);
-    }
-    return translated;
+    if (inFlightTranslations.has(key)) return inFlightTranslations.get(key);
+    const task = (async () => {
+      let translated = null;
+      const translator = await getTranslator();
+      if (translator) {
+        try { translated = await translator.translate(text); } catch { /* remote requires opt-in */ }
+      }
+      if (!translated && onlineAllowed && translationCount < MAX_AUTO_TRANSLATIONS) {
+        translationCount++;
+        const response = await chrome.runtime.sendMessage({ type: "PT_TRANSLATE_REMOTE", text });
+        if (response && response.ok) translated = response.translatedText;
+      }
+      if (translated) {
+        cache.set(key, translated);
+        if (cache.size > 100) cache.delete(cache.keys().next().value);
+      }
+      return translated;
+    })();
+    inFlightTranslations.set(key, task);
+    try { return await task; }
+    finally { inFlightTranslations.delete(key); }
   }
 
   function draw(regions, currentEpoch) {
