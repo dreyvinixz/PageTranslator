@@ -90,17 +90,17 @@ async function recognizeViewport(screenshot, viewport, imageRegions) {
   ctx.fillRect(0, 0, width, height);
   const inputX = image.naturalWidth / viewport.width;
   const inputY = image.naturalHeight / viewport.height;
-  const outputX = width / viewport.width;
-  const outputY = height / viewport.height;
+  const outputX = width / areaWidth;
+  const outputY = height / areaHeight;
   let selected = 0;
-  for (const raw of imageRegions.slice(0, 12)) {
+  for (const raw of accepted) {
     if (!raw || ![raw.x, raw.y, raw.width, raw.height].every(Number.isFinite)) continue;
     const x = Math.max(0, raw.x), y = Math.max(0, raw.y);
     const w = Math.min(Math.max(0, raw.width), viewport.width - x);
     const h = Math.min(Math.max(0, raw.height), viewport.height - y);
     if (w < 70 || h < 70) continue;
     ctx.drawImage(image, x * inputX, y * inputY, w * inputX, h * inputY,
-      x * outputX, y * outputY, w * outputX, h * outputY);
+      (x - left) * outputX, (y - top) * outputY, w * outputX, h * outputY);
     selected++;
   }
   if (!selected) return { regions: [], elapsedMs: 0 };
@@ -109,7 +109,15 @@ async function recognizeViewport(screenshot, viewport, imageRegions) {
   // Tesseract.js v6 only includes bounding boxes when blocks output is explicitly enabled.
   const result = await worker.recognize(canvas, {}, { blocks: true });
   const lines = PageTranslatorRegions.collectLines(result.data.blocks,
-    viewport.width / width, viewport.height / height, viewport.width, viewport.height);
+    areaWidth / width, areaHeight / height, areaWidth, areaHeight);
+  for (const line of lines) {
+    line.bbox.x0 += left;
+    line.bbox.x1 += left;
+    line.bbox.y0 += top;
+    line.bbox.y1 += top;
+  }
+  canvas.width = 0;
+  canvas.height = 0;
   return {
     regions: PageTranslatorRegions.groupLines(lines, 12),
     elapsedMs: Math.round(performance.now() - start)
