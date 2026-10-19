@@ -7,11 +7,12 @@ const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const dist = join(root, "dist");
 const manifest = JSON.parse(readFileSync(join(dist, "manifest.json"), "utf8"));
 assert.equal(manifest.manifest_version, 3);
+assert.equal(manifest.version, "0.2.0");
 assert.ok(manifest.permissions.includes("activeTab"));
 assert.ok(!manifest.permissions.includes("tabs"));
 assert.ok(!manifest.host_permissions.includes("<all_urls>"));
 assert.deepEqual(manifest.host_permissions, ["https://api.mymemory.translated.net/*"]);
-for (const file of ["background.js", "content.js", "offscreen.js", "offscreen.html",
+for (const file of ["background.js", "content.js", "auto-content.js", "regions.js", "offscreen.js", "offscreen.html",
   "vendor/tesseract.min.js", "vendor/worker.min.js", "vendor/lang/eng.traineddata.gz"]) {
   assert.ok(existsSync(join(dist, file)), "Não encontrado: " + file);
 }

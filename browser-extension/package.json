@@ -1,11 +1,12 @@
 {
   "name": "pagetranslator-browser",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "PageTranslator para Chromium Manifest V3",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "verify": "node scripts/verify.mjs"
+    "verify": "node scripts/verify.mjs",
+    "test": "node --test tests/*.test.mjs"
   },
   "devDependencies": {
     "@tesseract.js-data/eng": "1.0.0",
