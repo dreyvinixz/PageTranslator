@@ -46,7 +46,7 @@ jobs:
       - name: Upload Finder preview
         uses: actions/upload-artifact@v4
         with:
-          name: PageTranslator-Finder-v0.3.0-preview
+          name: PageTranslator-Finder-v0.3.1-preview
           path: PageTranslator-Finder-v0.3.1-preview.zip
           if-no-files-found: error
           retention-days: 30
