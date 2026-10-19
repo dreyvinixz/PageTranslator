@@ -376,9 +376,9 @@
 
   chrome.runtime.onMessage.addListener((message, _sender, respond) => {
     if (message && message.type === "PT_SCAN_PROGRESS") {
-      if (active && busy && message.scanId === epoch) {
+      if (active && busy) {
         if (host && message.label.startsWith("Captura concluída")) host.style.visibility = "visible";
-        setStatus(message.label);
+        if (message.scanId === epoch) setStatus(message.label);
       }
       return;
     }
