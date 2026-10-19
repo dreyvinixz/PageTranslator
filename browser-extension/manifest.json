@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PageTranslator Finder — Diagnóstico",
-  "version": "0.3.3",
-  "description": "Finder de imagens com agrupamento independente de falas de HQ, sem OCR nem tradução.",
+  "version": "0.4.0",
+  "description": "Finder de quadrinhos com varredura automática na rolagem, sem OCR ou tradução.",
   "minimum_chrome_version": "116",
   "permissions": ["activeTab", "scripting"],
   "background": { "service_worker": "background.js" },

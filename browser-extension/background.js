@@ -1,5 +1,5 @@
 "use strict";
-// Diagnostic Finder v0.3.0. No OCR, no external requests, no continuous capture.
+// Lightweight Finder with debounced on-scroll analysis. No OCR or external endpoints.
 function withTimeout(promise, milliseconds) {
   let timer;
   return Promise.race([
@@ -14,7 +14,7 @@ chrome.action.onClicked.addListener(async (tab) => {
   try {
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ["finder-core.js", "finder-text.js", "finder-fit.js", "finder-content.js"]
+      files: ["finder-core.js", "finder-text.js", "finder-fit.js", "finder-auto.js", "finder-content.js"]
     });
     await chrome.tabs.sendMessage(tab.id, { type: "PT_FINDER_OPEN" });
   } catch (error) {
