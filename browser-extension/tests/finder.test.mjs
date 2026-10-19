@@ -45,9 +45,24 @@ test("comic mode marks a bright bubble with dark lettering as candidate", () => 
   assert.ok(candidates.length >= 1, "expected a probable balloon");
   const b = candidates[0];
   assert.equal(b.kind, "balloon-candidate");
+  assert.equal(b.shape, "rectangular");
   assert.equal(b.rect.x, 20);
   assert.equal(b.rect.y, 20);
   assert.ok(b.score > 0 && b.score < 1);
+});
+
+test("rounded bright balloon is reported as shape candidate, without text recognition", () => {
+  const { image, paint } = fixture(200, 140);
+  const cx = 85, cy = 60, rx = 58, ry = 27;
+  for (let y = 0; y < image.height; y++) for (let x = 0; x < image.width; x++) {
+    const dx = (x - cx) / rx, dy = (y - cy) / ry;
+    if (dx * dx + dy * dy <= 1) paint(x, y, x + 1, y + 1, 242, 242, 237);
+  }
+  paint(60, 49, 105, 53, 15, 15, 15);
+  paint(67, 62, 106, 66, 15, 15, 15);
+  const regions = findLightRegions(image, [{ x: 0, y: 0, width: 170, height: 120 }]);
+  assert.ok(regions.length > 0);
+  assert.equal(regions[0].shape, "rounded");
 });
 
 test("does not present textless white empty box as a balloon", () => {
