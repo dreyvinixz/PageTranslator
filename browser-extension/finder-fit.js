@@ -84,7 +84,7 @@
       // A failed light-background test is a safe fallback for dark/colored balloons:
       // improve text isolation rather than inventing an ungrounded outline.
       const stepsX = Math.ceil(clamp(ink.width * 0.85, 12, 62));
-      const stepsY = Math.ceil(clamp(ink.height * 0.65 + 4, 8, 26));
+      const stepsY = Math.ceil(clamp(ink.height * 1.8 + 5, 12, 45));
       const left = scan("x", ink, -1, stepsX);
       const right = scan("x", ink, 1, stepsX);
       const top = scan("y", ink, -1, stepsY);
