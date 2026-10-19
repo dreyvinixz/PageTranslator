@@ -67,8 +67,20 @@ async function recognizeViewport(screenshot, viewport, imageRegions) {
   const image = new Image();
   image.src = screenshot;
   await image.decode();
-  const width = Math.max(1, Math.round(image.naturalWidth * Math.min(1, 1400 / image.naturalWidth, 1400 / image.naturalHeight)));
-  const height = Math.max(1, Math.round(image.naturalHeight * (width / image.naturalWidth)));
+  const accepted = imageRegions.slice(0, 8).filter((r) => r &&
+    [r.x, r.y, r.width, r.height].every(Number.isFinite) &&
+    r.width >= 70 && r.height >= 70 && r.x >= 0 && r.y >= 0 &&
+    r.x + r.width <= viewport.width + 2 && r.y + r.height <= viewport.height + 2);
+  if (!accepted.length) return { regions: [], elapsedMs: 0 };
+  const left = Math.max(0, Math.floor(Math.min(...accepted.map((r) => r.x))));
+  const top = Math.max(0, Math.floor(Math.min(...accepted.map((r) => r.y))));
+  const right = Math.min(viewport.width, Math.ceil(Math.max(...accepted.map((r) => r.x + r.width))));
+  const bottom = Math.min(viewport.height, Math.ceil(Math.max(...accepted.map((r) => r.y + r.height))));
+  const areaWidth = right - left;
+  const areaHeight = bottom - top;
+  const zoom = Math.min(1, 1400 / areaWidth, 1400 / areaHeight, Math.sqrt(1700000 / (areaWidth * areaHeight)));
+  const width = Math.max(1, Math.floor(areaWidth * zoom));
+  const height = Math.max(1, Math.floor(areaHeight * zoom));
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
