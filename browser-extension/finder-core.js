@@ -89,11 +89,22 @@
       }
       const darkRatio = samples ? dark / samples : 0;
       if (darkRatio < 0.007 || darkRatio > 0.42) continue;
+      // Corner occupancy distinguishes rectangular caption boxes from ovals
+      // only approximately; these are *shape guesses*, not semantic labels.
+      const corners = [
+        [x0 + Math.round(w * 0.10), y0 + Math.round(h * 0.10)],
+        [x1 - Math.round(w * 0.10), y0 + Math.round(h * 0.10)],
+        [x0 + Math.round(w * 0.10), y1 - Math.round(h * 0.10)],
+        [x1 - Math.round(w * 0.10), y1 - Math.round(h * 0.10)]
+      ];
+      const litCorners = corners.filter(([x, y]) => bright(y * width + x)).length;
+      const shape = litCorners >= 3 ? "rectangular" :
+        litCorners <= 1 ? "rounded" : "unknown";
       const score = Math.min(0.89, Math.max(0.28,
         0.28 + 0.40 * fill + (darkRatio >= 0.02 ? 0.12 : 0) +
         (aspect >= 1.1 && aspect <= 4 ? 0.07 : 0)));
       results.push({
-        kind: "balloon-candidate", score: Number(score.toFixed(2)),
+        kind: "balloon-candidate", shape, score: Number(score.toFixed(2)),
         rect: { x: x0, y: y0, width: w, height: h }
       });
       if (results.length >= maxResults * 3) break;
