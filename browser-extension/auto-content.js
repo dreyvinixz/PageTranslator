@@ -287,9 +287,12 @@
     } catch (err) {
       if (active) {
         const message = String(err.message || err);
-        if (message.includes("OCR_INTERVAL") || message.includes("OCR_BUSY")) {
+        if (message.includes("OCR_INTERVAL")) {
           needsRescan = true;
-          setStatus("OCR ocupado; aguardando a próxima tentativa…");
+          setStatus("Respeitando o intervalo mínimo de captura…");
+        } else if (message.includes("OCR_BUSY")) {
+          scanBlocked = true;
+          setStatus("O motor de OCR continua ocupado. Clique Atualizar ou Seleção manual para recuperar.");
         } else {
           scanBlocked = true;
           setStatus("OCR interrompido: " + message + "\nClique Atualizar para tentar novamente.");
@@ -356,9 +359,17 @@
           : "Tradução online desativada.");
       }
     });
-    manual.addEventListener("click", () => {
-      stop();
-      void chrome.runtime.sendMessage({ type: "PT_MANUAL_REQUEST" });
+    manual.addEventListener("click", async () => {
+      manual.disabled = true;
+      setStatus("Abrindo a seleção manual…");
+      try {
+        const result = await chrome.runtime.sendMessage({ type: "PT_MANUAL_REQUEST" });
+        if (!result?.ok) throw new Error(result?.error || "Não foi possível abrir a seleção.");
+        stop();
+      } catch (error) {
+        manual.disabled = false;
+        setStatus("Falha ao abrir seleção manual: " + String(error.message || error));
+      }
     });
     pause.addEventListener("click", stop);
 

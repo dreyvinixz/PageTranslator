@@ -44,7 +44,7 @@ jobs:
       - name: Package unpacked extension
         run: |
           cd browser-extension/dist
-          zip -r "$GITHUB_WORKSPACE/PageTranslator-browser-v0.2.2-preview.zip" .
+          zip -r "$GITHUB_WORKSPACE/PageTranslator-browser-v0.2.3-preview.zip" .
       - name: Upload preview ZIP
         uses: actions/upload-artifact@v4
         with:

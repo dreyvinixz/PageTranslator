@@ -23,12 +23,10 @@ function getWorker() {
 }
 
 async function recognize(screenshot, rect) {
-  if (typeof screenshot !== "string" || !screenshot.startsWith("data:image/png;base64,")) {
+  if (typeof screenshot !== "string" || !/^data:image\/(jpeg|png);base64,/.test(screenshot)) {
     throw new Error("Formato da captura inválido.");
   }
-  if (screenshot.length > 25_000_000) {
-    throw new Error("A imagem é grande demais para o OCR nesta versão.");
-  }
+  if (screenshot.length > 25000000) throw new Error("Captura maior que o limite permitido.");
   const image = new Image();
   image.src = screenshot;
   await image.decode();
@@ -38,24 +36,31 @@ async function recognize(screenshot, rect) {
   const y = Math.max(0, Math.floor(rect.y * sy));
   const width = Math.min(image.naturalWidth - x, Math.ceil(rect.width * sx));
   const height = Math.min(image.naturalHeight - y, Math.ceil(rect.height * sy));
-  if (width < 2 || height < 2) throw new Error("A seleção está fora da área capturada.");
-  // Ampliar regiões pequenas melhora a leitura de balões com fontes pequenas.
-  const zoom = Math.min(2, Math.max(1, 1000 / width));
+  if (width < 2 || height < 2) throw new Error("Seleção fora da área capturada.");
+  // Limit the total pixels of every crop; the old code could upscale tiny areas
+  // to a 4096px canvas and exhaust the browser's memory.
+  const zoom = Math.min(2, 1200 / width, 1200 / height,
+    Math.sqrt(1200000 / (width * height)));
   const canvas = document.createElement("canvas");
-  canvas.width = Math.min(4096, Math.round(width * zoom));
-  canvas.height = Math.min(4096, Math.round(height * zoom));
+  canvas.width = Math.max(1, Math.floor(width * zoom));
+  canvas.height = Math.max(1, Math.floor(height * zoom));
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("Canvas indisponível.");
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(image, x, y, width, height, 0, 0, canvas.width, canvas.height);
-  const worker = await getWorker();
-  const result = await worker.recognize(canvas);
-  return {
-    text: String(result.data.text || "").trim(),
-    confidence: Number(result.data.confidence || 0)
-  };
+  const start = performance.now();
+  try {
+    const worker = await getWorker();
+    const result = await worker.recognize(canvas);
+    return { text: String(result.data.text || "").trim(),
+      confidence: Number(result.data.confidence || 0),
+      elapsedMs: Math.round(performance.now() - start) };
+  } finally {
+    canvas.width = 0;
+    canvas.height = 0;
+    image.src = "";
+  }
 }
-
 
 async function recognizeViewport(screenshot, viewport, imageRegions) {
   if (typeof screenshot !== "string" || !/^data:image\/(png|jpeg);base64,/.test(screenshot) ||

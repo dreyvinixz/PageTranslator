@@ -47,48 +47,59 @@ chrome.action.onClicked.addListener(async (tab) => {
     return;
   }
   try {
+    // The extension opens in low-cost manual mode by default.
+    await chrome.tabs.sendMessage(tab.id, { type: "PT_AUTO_STOP" }).catch(() => {});
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ["auto-content.js"]
+      files: ["content.js"]
     });
-    await chrome.tabs.sendMessage(tab.id, { type: "PT_AUTO_TOGGLE" });
+    await chrome.tabs.sendMessage(tab.id, { type: "PT_OPEN" });
   } catch (error) {
     console.error("PageTranslator: não foi possível iniciar nesta página.", error);
   }
 });
 
 async function captureAndRecognize(message, sender) {
-  const tab = sender.tab;
-  const rect = message.rect;
-  if (!tab || !tab.id || !rect) throw new Error("Captura sem guia ou seleção válida.");
+  const tab = sender.tab, rect = message.rect;
+  if (!tab?.id || !rect) throw new Error("Captura sem guia ou seleção válida.");
+  const keys = ["x", "y", "width", "height", "viewportWidth", "viewportHeight"];
+  if (!keys.every((key) => Number.isFinite(rect[key])) ||
+      rect.x < 0 || rect.y < 0 || rect.width < 12 || rect.height < 12 ||
+      rect.x + rect.width > rect.viewportWidth + 2 ||
+      rect.y + rect.height > rect.viewportHeight + 2) {
+    throw new Error("Seleção inválida ou fora da área visível.");
+  }
   const active = await chrome.tabs.query({ active: true, windowId: tab.windowId });
   if (active.length !== 1 || active[0].id !== tab.id) {
-    throw new Error("A guia mudou antes da captura. Selecione o balão novamente.");
+    throw new Error("Volte à guia da HQ antes de iniciar o reconhecimento.");
   }
-  const numbers = ["x", "y", "width", "height", "viewportWidth", "viewportHeight"];
-  if (!numbers.every((key) => Number.isFinite(rect[key]))) {
-    throw new Error("Coordenadas inválidas.");
+  // Cancel the unfinished full-page OCR before a manual crop.
+  if (autoRunning) await resetOffscreen();
+  try {
+    const screenshot = await bounded(
+      chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 88 }),
+      12000, "Captura do balão"
+    );
+    await chrome.tabs.sendMessage(tab.id, { type: "PT_MANUAL_CAPTURED" }).catch(() => {});
+    await bounded(ensureOffscreen(), 12000, "Inicialização do OCR");
+    const response = await bounded(chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "PT_RECOGNIZE",
+      screenshot,
+      rect
+    }), 45000, "Reconhecimento do balão");
+    if (!response?.ok) throw new Error(response?.error || "OCR local indisponível.");
+    return { text: response.text, confidence: response.confidence };
+  } catch (error) {
+    const messageText = String(error?.message || error);
+    if (/tempo limite|message channel closed|receiving end does not exist/i.test(messageText)) {
+      await bounded(resetOffscreen(), 3500, "Reset OCR").catch(() => {});
+    }
+    throw new Error("Falha no OCR do balão: " + messageText);
+  } finally {
+    await chrome.tabs.sendMessage(tab.id, { type: "PT_MANUAL_CAPTURED" }).catch(() => {});
   }
-  if (rect.width < 12 || rect.height < 12 || rect.viewportWidth <= 0 ||
-      rect.viewportHeight <= 0 || rect.width > rect.viewportWidth ||
-      rect.height > rect.viewportHeight) {
-    throw new Error("Selecione uma região válida dentro da página.");
-  }
-  // Somente o recorte selecionado será processado. Nada é salvo em disco.
-  const screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
-  await ensureOffscreen();
-  const response = await chrome.runtime.sendMessage({
-    target: "offscreen",
-    type: "PT_RECOGNIZE",
-    screenshot,
-    rect
-  });
-  if (!response || !response.ok) {
-    throw new Error(response && response.error ? response.error : "OCR indisponível.");
-  }
-  return { text: response.text, confidence: response.confidence };
 }
-
 
 let lastAutoCapture = 0;
 async function captureAuto(message, sender) {
@@ -150,9 +161,15 @@ async function captureAuto(message, sender) {
   }
 }
 async function openManualSelector(tabId) {
-  await chrome.tabs.sendMessage(tabId, { type: "PT_AUTO_STOP" }).catch(() => {});
+  // Do not hide the automatic panel until the manual UI is confirmed working.
+  if (autoRunning) await bounded(resetOffscreen(), 3500, "Cancelar OCR automático").catch(() => {});
   await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
-  await chrome.tabs.sendMessage(tabId, { type: "PT_START" });
+  await chrome.tabs.sendMessage(tabId, { type: "PT_OPEN" });
+  await chrome.tabs.sendMessage(tabId, { type: "PT_AUTO_STOP" }).catch(() => {});
+}
+async function openAuto(tabId) {
+  await chrome.scripting.executeScript({ target: { tabId }, files: ["auto-content.js"] });
+  await chrome.tabs.sendMessage(tabId, { type: "PT_AUTO_TOGGLE" });
 }
 
 async function translateOnline(text) {
@@ -185,6 +202,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     captureAuto(message, sender)
       .then((result) => sendResponse({ ok: true, ...result }))
       .catch((error) => sendResponse({ ok: false, error: String(error.message || error) }));
+    return true;
+  }
+  if (message.type === "PT_AUTO_REQUEST" && sender.tab?.id) {
+    openAuto(sender.tab.id)
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
     return true;
   }
   if (message.type === "PT_MANUAL_REQUEST" && sender.tab && sender.tab.id) {

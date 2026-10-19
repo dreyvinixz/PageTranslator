@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PageTranslator — HQs EN → PT",
-  "version": "0.2.2",
-  "description": "Reconheça balões de HQ com OCR mais estável e econômico no Chrome ou Edge.",
+  "version": "0.2.3",
+  "description": "Traduza balões selecionados em Chrome e Edge; modo automático experimental opcional.",
   "minimum_chrome_version": "116",
   "permissions": ["activeTab", "scripting", "offscreen"],
   "host_permissions": ["https://api.mymemory.translated.net/*"],
@@ -10,7 +10,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "PageTranslator: iniciar/pausar tradução automática"
+    "default_title": "PageTranslator: abrir seleção de balão (OCR local)"
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"

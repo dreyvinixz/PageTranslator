@@ -7,7 +7,7 @@ const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const dist = join(root, "dist");
 const manifest = JSON.parse(readFileSync(join(dist, "manifest.json"), "utf8"));
 assert.equal(manifest.manifest_version, 3);
-assert.equal(manifest.version, "0.2.2");
+assert.equal(manifest.version, "0.2.3");
 assert.ok(manifest.permissions.includes("activeTab"));
 assert.ok(!manifest.permissions.includes("tabs"));
 assert.ok(!manifest.host_permissions.includes("<all_urls>"));
