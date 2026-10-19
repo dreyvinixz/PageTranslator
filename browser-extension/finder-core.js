@@ -38,7 +38,7 @@
     const results = [];
     const maxResults = Math.min(25, Math.max(1, options.limit || 18));
     const minSize = Math.max(12, Math.round(Math.min(width, height) * 0.035));
-    const maxArea = Math.max(1500, Math.round(total * 0.22));
+    const maxArea = Math.max(1500, Math.round(total * 0.30));
     function bright(i) {
       const p = i * 4, r = data[p], g = data[p + 1], b = data[p + 2];
       return r >= 192 && g >= 192 && b >= 185 &&
