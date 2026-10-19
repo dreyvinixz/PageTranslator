@@ -58,7 +58,7 @@ async function recognize(screenshot, rect) {
 
 
 async function recognizeViewport(screenshot, viewport, imageRegions) {
-  if (typeof screenshot !== "string" || !screenshot.startsWith("data:image/png;base64,") ||
+  if (typeof screenshot !== "string" || !/^data:image\/(png|jpeg);base64,/.test(screenshot) ||
       screenshot.length > 25_000_000) throw new Error("Captura inválida ou muito grande.");
   if (!viewport || !Number.isFinite(viewport.width) || !Number.isFinite(viewport.height) ||
       viewport.width < 50 || viewport.height < 50 || !Array.isArray(imageRegions)) {
@@ -67,8 +67,20 @@ async function recognizeViewport(screenshot, viewport, imageRegions) {
   const image = new Image();
   image.src = screenshot;
   await image.decode();
-  const width = Math.max(1, Math.round(image.naturalWidth * Math.min(1, 2600 / image.naturalWidth)));
-  const height = Math.max(1, Math.round(image.naturalHeight * (width / image.naturalWidth)));
+  const accepted = imageRegions.slice(0, 8).filter((r) => r &&
+    [r.x, r.y, r.width, r.height].every(Number.isFinite) &&
+    r.width >= 70 && r.height >= 70 && r.x >= 0 && r.y >= 0 &&
+    r.x + r.width <= viewport.width + 2 && r.y + r.height <= viewport.height + 2);
+  if (!accepted.length) return { regions: [], elapsedMs: 0 };
+  const left = Math.max(0, Math.floor(Math.min(...accepted.map((r) => r.x))));
+  const top = Math.max(0, Math.floor(Math.min(...accepted.map((r) => r.y))));
+  const right = Math.min(viewport.width, Math.ceil(Math.max(...accepted.map((r) => r.x + r.width))));
+  const bottom = Math.min(viewport.height, Math.ceil(Math.max(...accepted.map((r) => r.y + r.height))));
+  const areaWidth = right - left;
+  const areaHeight = bottom - top;
+  const zoom = Math.min(1, 1400 / areaWidth, 1400 / areaHeight, Math.sqrt(1700000 / (areaWidth * areaHeight)));
+  const width = Math.max(1, Math.floor(areaWidth * zoom));
+  const height = Math.max(1, Math.floor(areaHeight * zoom));
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -78,17 +90,17 @@ async function recognizeViewport(screenshot, viewport, imageRegions) {
   ctx.fillRect(0, 0, width, height);
   const inputX = image.naturalWidth / viewport.width;
   const inputY = image.naturalHeight / viewport.height;
-  const outputX = width / viewport.width;
-  const outputY = height / viewport.height;
+  const outputX = width / areaWidth;
+  const outputY = height / areaHeight;
   let selected = 0;
-  for (const raw of imageRegions.slice(0, 12)) {
+  for (const raw of accepted) {
     if (!raw || ![raw.x, raw.y, raw.width, raw.height].every(Number.isFinite)) continue;
     const x = Math.max(0, raw.x), y = Math.max(0, raw.y);
     const w = Math.min(Math.max(0, raw.width), viewport.width - x);
     const h = Math.min(Math.max(0, raw.height), viewport.height - y);
     if (w < 70 || h < 70) continue;
     ctx.drawImage(image, x * inputX, y * inputY, w * inputX, h * inputY,
-      x * outputX, y * outputY, w * outputX, h * outputY);
+      (x - left) * outputX, (y - top) * outputY, w * outputX, h * outputY);
     selected++;
   }
   if (!selected) return { regions: [], elapsedMs: 0 };
@@ -97,7 +109,15 @@ async function recognizeViewport(screenshot, viewport, imageRegions) {
   // Tesseract.js v6 only includes bounding boxes when blocks output is explicitly enabled.
   const result = await worker.recognize(canvas, {}, { blocks: true });
   const lines = PageTranslatorRegions.collectLines(result.data.blocks,
-    viewport.width / width, viewport.height / height, viewport.width, viewport.height);
+    areaWidth / width, areaHeight / height, areaWidth, areaHeight);
+  for (const line of lines) {
+    line.bbox.x0 += left;
+    line.bbox.x1 += left;
+    line.bbox.y0 += top;
+    line.bbox.y1 += top;
+  }
+  canvas.width = 0;
+  canvas.height = 0;
   return {
     regions: PageTranslatorRegions.groupLines(lines, 12),
     elapsedMs: Math.round(performance.now() - start)

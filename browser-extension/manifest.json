@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PageTranslator — HQs EN → PT",
-  "version": "0.2.0",
-  "description": "Reconheça automaticamente os balões visíveis de HQs com OCR local e traduza no Chrome ou Edge.",
+  "version": "0.2.2",
+  "description": "Reconheça balões de HQ com OCR mais estável e econômico no Chrome ou Edge.",
   "minimum_chrome_version": "116",
   "permissions": ["activeTab", "scripting", "offscreen"],
   "host_permissions": ["https://api.mymemory.translated.net/*"],

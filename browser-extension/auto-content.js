@@ -3,13 +3,14 @@
   if (globalThis.__pageTranslatorAutoLoaded) return;
   globalThis.__pageTranslatorAutoLoaded = true;
 
-  const MIN_SCAN_GAP_MS = 2400;
-  const SCROLL_IDLE_MS = 750;
+  const MIN_SCAN_GAP_MS = 5000;
+  const SCROLL_IDLE_MS = 1200;
   const MAX_AUTO_TRANSLATIONS = 30;
   const MAX_VISIBLE = 10;
   let active = false, onlineAllowed = false, scanPage = false;
   let host = null, shadow = null, status = null, enableOnline = null, fullPage = null;
   let chips = [], scanTimer = null, busy = false, epoch = 0, lastScan = 0;
+  let needsRescan = false, scanBlocked = false;
   let observer = null, translatorPromise = null, translationCount = 0;
   let visibleRegions = [];
   const cache = new Map();
@@ -37,6 +38,7 @@
   }
 
   function setStatus(message) {
+    if (active && host && !host.isConnected && document.documentElement) document.documentElement.appendChild(host);
     if (status && active) status.textContent = message;
   }
 
@@ -47,7 +49,7 @@
   }
 
   function scheduleScan(delay = SCROLL_IDLE_MS) {
-    if (!active) return;
+    if (!active || scanBlocked) return;
     clearTimeout(scanTimer);
     scanTimer = setTimeout(() => { scanTimer = null; void scan(); }, delay);
   }
@@ -57,7 +59,10 @@
     epoch++;
     clearChips();
     setStatus("Atualizando após a rolagem…");
-    scheduleScan();
+    if (busy) {
+      needsRescan = true;
+      setStatus("Aguardando OCR atual terminar antes de atualizar…");
+    } else scheduleScan();
   }
 
   function handleImageLoad(event) {
@@ -65,10 +70,7 @@
   }
 
   function imageRects() {
-    const nodes = [
-      ...document.querySelectorAll("img"),
-      ...document.querySelectorAll("canvas")
-    ].slice(0, 500);
+    const nodes = Array.from(document.querySelectorAll("img,canvas")).slice(0, 160);
     const result = [];
     const vw = innerWidth, vh = innerHeight;
     for (const node of nodes) {
@@ -86,7 +88,7 @@
       result.push({ x: x0, y: y0, width, height, area: width * height });
     }
     result.sort((a, b) => b.area - a.area);
-    return result.slice(0, 8).map(({ x, y, width, height }) => ({ x, y, width, height }));
+    return result.slice(0, 5).map(({ x, y, width, height }) => ({ x, y, width, height }));
   }
 
   function clearSession() {
@@ -116,6 +118,8 @@
     onlineAllowed = false;
     scanPage = false;
     translationCount = 0;
+    needsRescan = false;
+    scanBlocked = false;
     cache.clear();
     if (translatorPromise) {
       translatorPromise.then((translator) => {
@@ -135,7 +139,10 @@
   }
 
   async function getTranslator() {
-    if (typeof globalThis.Translator === "undefined") return null;
+    if (typeof globalThis.Translator === "undefined" ||
+        typeof globalThis.Translator.availability !== "function") return null;
+    const availability = await globalThis.Translator.availability({ sourceLanguage: "en", targetLanguage: "pt" });
+    if (availability !== "available") return null;
     if (!translatorPromise) {
       translatorPromise = globalThis.Translator.create({
         sourceLanguage: "en", targetLanguage: "pt"
@@ -233,7 +240,8 @@
   }
 
   async function scan() {
-    if (!active || busy || document.visibilityState !== "visible") return;
+    if (!active || scanBlocked || document.visibilityState !== "visible") return;
+    if (busy) { needsRescan = true; return; }
     const now = Date.now();
     if (now - lastScan < MIN_SCAN_GAP_MS) {
       scheduleScan(MIN_SCAN_GAP_MS - (now - lastScan) + 100);
@@ -249,6 +257,7 @@
     }
     const currentEpoch = ++epoch;
     busy = true;
+    needsRescan = false;
     clearChips();
     setStatus("Reconhecendo os balões visíveis (OCR local)…");
     try {
@@ -259,6 +268,7 @@
       lastScan = Date.now();
       const response = await chrome.runtime.sendMessage({
         type: "PT_CAPTURE_VIEW",
+        scanId: currentEpoch,
         viewport: { width: innerWidth, height: innerHeight },
         imageRegions: regions
       });
@@ -275,21 +285,30 @@
         setStatus("OCR concluído, mas nenhum texto inglês confiável foi localizado.");
       }
     } catch (err) {
-      if (active && currentEpoch === epoch) {
+      if (active) {
         const message = String(err.message || err);
-        if (message.includes("OCR_INTERVAL")) scheduleScan(1600);
-        setStatus("Não foi possível analisar: " + message);
+        if (message.includes("OCR_INTERVAL") || message.includes("OCR_BUSY")) {
+          needsRescan = true;
+          setStatus("OCR ocupado; aguardando a próxima tentativa…");
+        } else {
+          scanBlocked = true;
+          setStatus("OCR interrompido: " + message + "\nClique Atualizar para tentar novamente.");
+        }
       }
     } finally {
       if (host) host.style.visibility = "visible";
       busy = false;
-      if (active && currentEpoch !== epoch) scheduleScan(900);
+      if (active && !scanBlocked && (needsRescan || currentEpoch !== epoch)) {
+        needsRescan = false;
+        scheduleScan(SCROLL_IDLE_MS);
+      }
     }
   }
 
   function start() {
     if (active) return;
     active = true;
+    scanBlocked = false;
     const h = make("div");
     h.setAttribute("data-pagetranslator-auto", "true");
     document.documentElement.appendChild(h);
@@ -319,7 +338,7 @@
       "OCR local. Ao ativar Online, somente textos reconhecidos serão enviados à MyMemory, inclusive após rolar (máximo de 30 pedidos por sessão). Não use com conteúdo sensível."));
     shadow.appendChild(panel);
 
-    rescan.addEventListener("click", invalidate);
+    rescan.addEventListener("click", () => { scanBlocked = false; invalidate(); });
     togglePage.addEventListener("click", () => {
       scanPage = !scanPage;
       fullPage.textContent = scanPage ? "Somente imagens" : "Página toda";
@@ -349,23 +368,20 @@
     window.addEventListener("popstate", invalidate, true);
     document.addEventListener("load", handleImageLoad, true);
     document.addEventListener("visibilitychange", handleVisibility);
-    if (document.body) {
-      observer = new MutationObserver((changes) => {
-        if (changes.some((change) =>
-          (change.type === "attributes" && change.target instanceof HTMLImageElement) ||
-          [...change.addedNodes].some((node) =>
-            node.nodeType === Node.ELEMENT_NODE && (
-              node.matches?.("img,canvas") || node.querySelector?.("img,canvas")
-            )))) invalidate();
-      });
-      observer.observe(document.body, {
-        subtree: true, childList: true, attributes: true, attributeFilter: ["src", "srcset"]
-      });
-    }
-    scheduleScan(200);
+    // Avoid watching every DOM mutation in infinite-scroll comic readers:
+    // thousands of lazy-loaded panels can otherwise restart scans forever.
+    // Load/scroll/resize events are sufficient to request a new visible scan.
+    scheduleScan(450);
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, respond) => {
+    if (message && message.type === "PT_SCAN_PROGRESS") {
+      if (active && busy) {
+        if (host && message.label.startsWith("Captura concluída")) host.style.visibility = "visible";
+        if (message.scanId === epoch) setStatus(message.label);
+      }
+      return;
+    }
     if (message && message.type === "PT_AUTO_TOGGLE") {
       if (active) stop(); else start();
       respond({ ok: true, enabled: active });
