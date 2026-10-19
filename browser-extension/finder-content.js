@@ -307,19 +307,8 @@
           width: c.inkRect.width / scaleX, height: c.inkRect.height / scaleY
         } : undefined
       }; });
-      // Check ownership of INK, not padded crop borders.
-      // Overlap of outer boxes is normal; sharing text pixels is suspicious.
-      for (let i = 0; i < mapped.length; i++) {
-        const a = mapped[i].inkRect;
-        if (!a) continue;
-        mapped[i].risk = mapped.some((other, j) => {
-          if (i === j || !other.inkRect) return false;
-          const b = other.inkRect;
-          return Core.overlapArea(a, b) / Math.min(
-            a.width * a.height, b.width * b.height) > 0.12;
-        });
-      }
-      items = [...items, ...mapped].slice(0, 28);
+      // Rectangular label overlap is okay; collision of unpadded ink is not.
+      items = [...items, ...Core.markMixedInkRegions(mapped)].slice(0, 28);
       lastMs = Math.round(performance.now() - start);
       render("Finder Quadrinhos: cada caixa amarela é uma unidade independente de texto. Pequenas sobreposições externas são aceitáveis; mistura de conteúdo não. Sem OCR.");
     } catch (e) {
