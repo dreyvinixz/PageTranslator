@@ -66,21 +66,19 @@
         if (ratio >= 0.28) {
           best = pos;
           misses = 0;
-        } else if (++misses >= 3) {
+        } else if (++misses >= 4) {
           break;
         }
       }
       // No clear boundary within search budget: don't expand into a large
       // white panel or window based on weak evidence.
-      return best !== null && misses >= 3 ? best : null;
+      return best !== null && misses >= 4 ? best : null;
     }
 
     return candidates.slice(0, maxCandidates).map((c, i) => {
       if (!valid(c.rect) || !valid(c.inkRect)) return { ...c, fit: "text-only" };
       const ink = c.inkRect;
       const base = c.rect;
-      const sampleBright = fraction("y",
-        clamp(Math.floor(ink.y - 3), 0, h - 1), ink);
       // A failed light-background test is a safe fallback for dark/colored balloons:
       // improve text isolation rather than inventing an ungrounded outline.
       const stepsX = Math.ceil(clamp(ink.width * 0.85, 12, 62));
