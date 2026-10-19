@@ -34,13 +34,14 @@ jobs:
           node --check background.js
           node --check finder-core.js
           node --check finder-text.js
+          node --check finder-fit.js
           node --check finder-content.js
       - name: Create preview ZIP
         shell: bash
         run: |
           set -euo pipefail
           cd browser-extension/dist
-          zip -q -r "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.3.2-preview.zip" .
+          zip -q -r "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.3.3-preview.zip" .
           test -f "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.3.2-preview.zip"
           unzip -t "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.3.2-preview.zip" >/dev/null
       - name: Upload Finder preview
