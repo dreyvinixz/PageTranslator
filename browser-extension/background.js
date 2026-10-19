@@ -71,7 +71,7 @@ async function captureAndRecognize(message, sender) {
 
 async function translateOnline(text) {
   const clean = String(text || "").replace(/\s+/g, " ").trim();
-  if (!clean || clean.length > MAX_OCR_TEXT) {
+  if (!clean || clean.length > MAX_OCR_TEXT || new TextEncoder().encode(clean).length > 500) {
     throw new Error("Selecione um balão de até 450 caracteres para a tradução online.");
   }
   // Nunca enviamos a imagem; somente o texto reconhecido, após clique explícito.
