@@ -24,6 +24,22 @@
     return kept;
   }
 
+  // A padded crop can touch another padded crop without mixing their text.
+  // Consider a collision suspicious only when their unpadded INK bounds overlap.
+  function markMixedInkRegions(regions, threshold = 0.12) {
+    if (!Array.isArray(regions)) return [];
+    return regions.map((region, i) => {
+      const a = region.inkRect;
+      const risk = validRect(a) && regions.some((other, j) => {
+        if (i === j || !validRect(other.inkRect)) return false;
+        const b = other.inkRect;
+        const minArea = Math.min(a.width * a.height, b.width * b.height);
+        return minArea > 0 && overlapArea(a, b) / minArea > threshold;
+      });
+      return { ...region, risk: Boolean(risk) };
+    });
+  }
+
   // Bright, approximately uniform connected regions are only *balloon candidates*.
   // No semantic segmentation, OCR, or external AI services are involved.
   function findLightRegions(image, permittedRects, options = {}) {
@@ -111,5 +127,5 @@
     }
     return dedupe(results, maxResults);
   }
-  scope.PageTranslatorFinderCore = { validRect, overlapArea, dedupe, findLightRegions };
+  scope.PageTranslatorFinderCore = { validRect, overlapArea, dedupe, markMixedInkRegions, findLightRegions };
 })(typeof globalThis !== "undefined" ? globalThis : self);
