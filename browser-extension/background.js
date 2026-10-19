@@ -14,7 +14,7 @@ chrome.action.onClicked.addListener(async (tab) => {
   try {
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ["finder-core.js", "finder-content.js"]
+      files: ["finder-core.js", "finder-text.js", "finder-content.js"]
     });
     await chrome.tabs.sendMessage(tab.id, { type: "PT_FINDER_OPEN" });
   } catch (error) {
