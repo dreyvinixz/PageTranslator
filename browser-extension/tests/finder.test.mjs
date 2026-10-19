@@ -266,3 +266,19 @@ test("frame fitting reports unsafe original crop rather than losing own text", (
   assert.ok(result[0].inkRect.width === a.inkRect.width);
   assert.ok(result[1].inkRect.width === b.inkRect.width);
 });
+
+test("caption fitter crosses a thin dark frame to reach its light outer margin", () => {
+  const { image, paint } = fixture(240, 150);
+  paint(32, 24, 193, 115, 246, 246, 242);
+  // A short horizontal black outline inside the search path.
+  paint(45, 42, 178, 45, 30, 30, 30);
+  for (let i = 0; i < 10; i++) paint(50 + i*11, 66, 55 + i*11, 75, 24, 24, 24);
+  const region = {
+    rect: { x: 42, y: 61, width: 150, height: 31 },
+    inkRect: { x: 49, y: 65, width: 127, height: 20 }
+  };
+  const found = refineSpeechRegions(image, [region])[0];
+  assert.ok(found.rect.y <= 31, "must find outer margin above a short black border");
+  assert.ok(found.rect.width >= region.rect.width);
+  assert.equal(found.fitRisk, false);
+});
