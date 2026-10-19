@@ -124,7 +124,7 @@ async function captureAuto(message, sender) {
       chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 82 }),
       12000, "Captura da aba"
     );
-    await progress("Preparando o motor de OCR local…");
+    await progress("Captura concluída; preparando OCR local…");
     await bounded(ensureOffscreen(), 10000, "Inicialização do OCR");
     await progress("Reconhecendo textos (pode demorar na primeira execução)…");
     const response = await bounded(chrome.runtime.sendMessage({
