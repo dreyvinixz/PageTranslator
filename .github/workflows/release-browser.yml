@@ -62,7 +62,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          (cd "$GITHUB_WORKSPACE/browser-extension/dist" && zip -q -r "$GITHUB_WORKSPACE/$ZIP" .)
+          python3 -c 'from pathlib import Path; from os import environ; from zipfile import ZipFile, ZIP_DEFLATED; root=Path("browser-extension/dist"); target=Path(environ["GITHUB_WORKSPACE"])/environ["ZIP"]; z=ZipFile(target, "w", ZIP_DEFLATED); [z.write(p, p.relative_to(root)) for p in sorted(root.rglob("*")) if p.is_file()]; z.close(); print("Created", target, target.stat().st_size)'
           ls -lah "$GITHUB_WORKSPACE/$ZIP"
           (cd "$GITHUB_WORKSPACE" && sha256sum "$ZIP" > "$ZIP.sha256")
           unzip -t "$GITHUB_WORKSPACE/$ZIP" >/dev/null
