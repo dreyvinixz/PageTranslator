@@ -69,10 +69,7 @@
   }
 
   function imageRects() {
-    const nodes = [
-      ...document.querySelectorAll("img"),
-      ...document.querySelectorAll("canvas")
-    ].slice(0, 500);
+    const nodes = Array.from(document.querySelectorAll("img,canvas")).slice(0, 160);
     const result = [];
     const vw = innerWidth, vh = innerHeight;
     for (const node of nodes) {
@@ -90,7 +87,7 @@
       result.push({ x: x0, y: y0, width, height, area: width * height });
     }
     result.sort((a, b) => b.area - a.area);
-    return result.slice(0, 8).map(({ x, y, width, height }) => ({ x, y, width, height }));
+    return result.slice(0, 5).map(({ x, y, width, height }) => ({ x, y, width, height }));
   }
 
   function clearSession() {
@@ -369,19 +366,9 @@
     window.addEventListener("popstate", invalidate, true);
     document.addEventListener("load", handleImageLoad, true);
     document.addEventListener("visibilitychange", handleVisibility);
-    if (document.body) {
-      observer = new MutationObserver((changes) => {
-        if (changes.some((change) =>
-          (change.type === "attributes" && change.target instanceof HTMLImageElement) ||
-          [...change.addedNodes].some((node) =>
-            node.nodeType === Node.ELEMENT_NODE && (
-              node.matches?.("img,canvas") || node.querySelector?.("img,canvas")
-            )))) invalidate();
-      });
-      observer.observe(document.body, {
-        subtree: true, childList: true, attributes: true, attributeFilter: ["src", "srcset"]
-      });
-    }
+    // Avoid watching every DOM mutation in infinite-scroll comic readers:
+    // thousands of lazy-loaded panels can otherwise restart scans forever.
+    // Load/scroll/resize events are sufficient to request a new visible scan.
     scheduleScan(200);
   }
 
