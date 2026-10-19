@@ -48,7 +48,7 @@ test("keeps two balloon columns apart", () => {
   ];
   const result = groupLines(input);
   assert.equal(result.length, 2);
-  assert.deepEqual(result.map((x) => x.lineCount).sort(), [2, 2]);
+  assert.deepEqual(Array.from(result, (x) => x.lineCount).sort(), [2, 2]);
 });
 
 test("distant lines are not grouped even when horizontally aligned", () => {
