@@ -185,6 +185,17 @@ test("overlapping ink triggers a review flag instead of merging two candidates",
   assert.equal(marked[1].risk, true);
 });
 
+test("large crop that swallows another independent utterance is marked unsafe", () => {
+  const regions = [
+    { rect:{x:10,y:10,width:180,height:180}, inkRect:{x:25,y:27,width:65,height:22} },
+    { rect:{x:116,y:110,width:90,height:65}, inkRect:{x:125,y:124,width:59,height:20} }
+  ];
+  const marked = Array.from(markMixedInkRegions(regions));
+  assert.equal(marked.length, 2);
+  assert.equal(marked[0].risk, true, "large crop includes another text group");
+  assert.equal(marked[1].risk, false, "smaller crop contains only its own text");
+});
+
 test("Finder counts text regions independently from image elements", () => {
   const ui = readFileSync(join(root, "finder-content.js"), "utf8");
   assert.match(ui, /\["balloon-candidate", "text-region-candidate"\]\.includes\(c\.kind\)/);
