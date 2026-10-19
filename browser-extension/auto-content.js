@@ -38,6 +38,7 @@
   }
 
   function setStatus(message) {
+    if (active && host && !host.isConnected && document.documentElement) document.documentElement.appendChild(host);
     if (status && active) status.textContent = message;
   }
 
@@ -375,7 +376,10 @@
 
   chrome.runtime.onMessage.addListener((message, _sender, respond) => {
     if (message && message.type === "PT_SCAN_PROGRESS") {
-      if (active && busy && message.scanId === epoch) setStatus(message.label);
+      if (active && busy && message.scanId === epoch) {
+        if (host && message.label.startsWith("Captura concluída")) host.style.visibility = "visible";
+        setStatus(message.label);
+      }
       return;
     }
     if (message && message.type === "PT_AUTO_TOGGLE") {
