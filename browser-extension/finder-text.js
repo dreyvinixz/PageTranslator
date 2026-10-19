@@ -1,6 +1,45 @@
 /* OCR-free ink grouping for text-bearing speech regions. This never recognizes words. */
 (function(root){
 "use strict";
+function groupRows(input){
+  const rows=(Array.isArray(input)?input:[]).filter(r=>
+    r && [r.x,r.y,r.x2,r.y2].every(Number.isFinite) &&
+    r.x2>r.x && r.y2>r.y).sort((a,b)=>a.y-b.y||a.x-b.x);
+  const clusters=[];
+  for(const row of rows){
+    const rowHeight=row.y2-row.y,rowWidth=row.x2-row.x;
+    let chosen=null,best=Infinity;
+    for(const cluster of clusters){
+      const previous=cluster.last;
+      const previousHeight=previous.y2-previous.y;
+      const gap=row.y-previous.y2;
+      // The spacing between two separate balloons can be just 10 scaled px.
+      // Prefer splitting uncertain passages to ever mixing speech content.
+      const maxGap=Math.max(3,Math.min(8,Math.round(
+        Math.min(previousHeight,rowHeight)*0.85+1)));
+      if(gap < -2||gap>maxGap)continue;
+      const intersection=Math.max(0,Math.min(row.x2,previous.x2)-
+        Math.max(row.x,previous.x));
+      const previousWidth=previous.x2-previous.x;
+      if(intersection/Math.min(rowWidth,previousWidth)<0.28)continue;
+      const c1=(row.x+row.x2)/2,c2=(previous.x+previous.x2)/2;
+      if(Math.abs(c1-c2)>Math.max(18,0.60*Math.max(rowWidth,previousWidth)))continue;
+      const cost=Math.max(0,gap)+4*(1-intersection/Math.min(rowWidth,previousWidth));
+      if(cost<best){best=cost;chosen=cluster;}
+    }
+    if(!chosen)clusters.push({...row,count:Number(row.count)||0,lineCount:1,
+      maxLineHeight:rowHeight,last:row});
+    else{
+      chosen.x=Math.min(chosen.x,row.x);chosen.x2=Math.max(chosen.x2,row.x2);
+      chosen.y=Math.min(chosen.y,row.y);chosen.y2=Math.max(chosen.y2,row.y2);
+      chosen.count+=Number(row.count)||0;
+      chosen.lineCount++;
+      chosen.maxLineHeight=Math.max(chosen.maxLineHeight,rowHeight);
+      chosen.last=row;
+    }
+  }
+  return clusters;
+}
 function findTextCandidates(image,allowed,opts={}){
   const {width:w,height:h,data}=image||{};
   if(!Number.isInteger(w)||!Number.isInteger(h)||w<=0||h<=0||w*h>1500000||
@@ -79,40 +118,31 @@ function findTextCandidates(image,allowed,opts={}){
     if(right-left<10)continue;
     rows.push({x:left,y:top,x2:right,y2:bottom,count:group.length});
   }
-  rows.sort((a,b)=>a.y-b.y||a.x-b.x);
-  const clusters=[];
-  for(const row of rows){
-    let found=null,best=1e9;
-    for(const cluster of clusters){
-      const gap=row.y-cluster.y2;
-      const overlap=Math.max(0,Math.min(row.x2,cluster.x2)-Math.max(row.x,cluster.x));
-      if(gap < -3||gap>12||
-          overlap/Math.min(row.x2-row.x,cluster.x2-cluster.x)<0.23)continue;
-      if(gap<best){found=cluster;best=gap;}
-    }
-    if(!found)clusters.push({...row});
-    else{
-      found.x=Math.min(found.x,row.x);found.x2=Math.max(found.x2,row.x2);
-      found.y=Math.min(found.y,row.y);found.y2=Math.max(found.y2,row.y2);
-      found.count+=row.count;
-    }
-  }
+  // A speech unit is a succession of nearby *text rows*, not a large shared
+  // white shape. Always compare the new row with the PREVIOUS line, never with
+  // the growing bounding rectangle (which can bridge adjacent balloons).
+  const clusters=groupRows(rows);
   const result=[];
   for(const a of clusters){
     const ww=a.x2-a.x,hh=a.y2-a.y;
-    const px=Math.max(8,Math.min(21,Math.round(ww*.2)));
-    const py=Math.max(7,Math.min(15,Math.round(hh*.8)));
+    // Tight crop around glyph ink: large padding can bleed into neighboring
+    // balloons even if the model has correctly split their text lines.
+    const px=Math.max(4,Math.min(11,Math.round(ww*.10)));
+    const py=Math.max(3,Math.min(7,Math.round(a.maxLineHeight*.65)));
     const x=Math.max(0,a.x-px),y=Math.max(0,a.y-py);
     const x2=Math.min(w,a.x2+px),y2=Math.min(h,a.y2+py);
     if(light(x,y,x2,y2)<.35)continue;
     result.push({
       kind:"text-region-candidate",shape:"text",
       score:Number(Math.min(.96,.45+Math.min(.43,a.count*.04)).toFixed(2)),
-      characters:a.count,rect:{x,y,width:x2-x,height:y2-y}
+      characters:a.count,lineCount:a.lineCount,
+      // Ink bounds are the ownership region used for no-mixing diagnostics.
+      inkRect:{x:a.x,y:a.y,width:ww,height:hh},
+      rect:{x,y,width:x2-x,height:y2-y}
     });
   }
   return result.sort((a,b)=>b.characters-a.characters)
     .slice(0,Math.min(18,opts.limit||18));
 }
-root.PageTranslatorTextCandidates={findTextCandidates};
+root.PageTranslatorTextCandidates={findTextCandidates,groupRows};
 })(typeof globalThis==="object"?globalThis:self);
