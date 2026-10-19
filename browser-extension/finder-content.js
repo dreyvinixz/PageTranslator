@@ -281,7 +281,9 @@
       const balloons = Core.findLightRegions(data, allowed, { limit: 12 });
       if (thisScan !== epoch) return;
       const mapped = balloons.map((c) => ({
-        ...c, label: "Possível balão (heurística visual)",
+        ...c, label: c.shape === "rectangular" ? "Possível caixa narrativa retangular" :
+          c.shape === "rounded" ? "Possível balão arredondado" :
+          "Possível região de fala (formato incerto)",
         rect: {
           x: c.rect.x / scaleX, y: c.rect.y / scaleY,
           width: c.rect.width / scaleX, height: c.rect.height / scaleY
