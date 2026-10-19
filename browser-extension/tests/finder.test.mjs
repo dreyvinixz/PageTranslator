@@ -9,7 +9,8 @@ context.globalThis = context;
 vm.runInNewContext(readFileSync(join(root, "finder-core.js"), "utf8"), context);
 const { findLightRegions, dedupe, overlapArea } = context.PageTranslatorFinderCore;
 vm.runInNewContext(readFileSync(join(root, "finder-text.js"), "utf8"), context);
-const { findTextCandidates } = context.PageTranslatorTextCandidates;
+const { findTextCandidates, groupRows } = context.PageTranslatorTextCandidates;
+const { markMixedInkRegions } = context.PageTranslatorFinderCore;
 
 function fixture(width = 160, height = 120) {
   const data = new Uint8ClampedArray(width * height * 4);
@@ -132,4 +133,61 @@ test("text detector produces separate candidates for distant balloons", () => {
   }
   const candidates = findTextCandidates(image, [{ x: 0, y: 0, width: 260, height: 170 }]);
   assert.equal(candidates.length, 2);
+});
+
+test("connected graphic balloons with two separate utterances remain separate", () => {
+  // Screenshot-derived geometry (synthetic metadata only, no comic artwork).
+  const rows = [
+    { x: 103, y: 288, x2: 123, y2: 295, count: 3 },
+    { x: 85, y: 296, x2: 138, y2: 304, count: 4 },
+    { x: 138, y: 314, x2: 182, y2: 321, count: 5 },
+    { x: 126, y: 323, x2: 191, y2: 330, count: 7 },
+    { x: 135, y: 332, x2: 174, y2: 339, count: 3 }
+  ];
+  const separate = Array.from(groupRows(rows));
+  assert.equal(separate.length, 2);
+  assert.deepEqual(separate.map((x) => x.lineCount), [2, 3]);
+  assert.equal(separate[0].y2, 304);
+  assert.equal(separate[1].y, 314);
+});
+
+test("line bounding geometry cannot bridge speech content from neighboring bubbles", () => {
+  const rows = [
+    { x: 50, y: 15, x2: 160, y2: 22, count: 9 },
+    { x: 60, y: 25, x2: 145, y2: 32, count: 8 },
+    { x: 122, y: 35, x2: 215, y2: 42, count: 9 }, // low overlap with previous line
+    { x: 130, y: 45, x2: 205, y2: 52, count: 7 }
+  ];
+  const separate = Array.from(groupRows(rows));
+  assert.equal(separate.length, 2);
+  assert.deepEqual(separate.map((x) => x.lineCount), [2, 2]);
+});
+
+test("overlapping display borders are allowed if text ink does not collide", () => {
+  const regions = [
+    { rect:{x:12,y:18,width:100,height:65}, inkRect:{x:24,y:28,width:74,height:19} },
+    { rect:{x:60,y:63,width:120,height:71}, inkRect:{x:75,y:82,width:85,height:36} }
+  ];
+  const marked = Array.from(markMixedInkRegions(regions));
+  assert.equal(marked.length, 2);
+  assert.equal(marked[0].risk, false);
+  assert.equal(marked[1].risk, false);
+});
+
+test("overlapping ink triggers a review flag instead of merging two candidates", () => {
+  const regions = [
+    { rect:{x:20,y:20,width:120,height:70}, inkRect:{x:38,y:31,width:75,height:42} },
+    { rect:{x:55,y:38,width:100,height:80}, inkRect:{x:70,y:51,width:65,height:43} }
+  ];
+  const marked = Array.from(markMixedInkRegions(regions));
+  assert.equal(marked.length, 2);
+  assert.equal(marked[0].risk, true);
+  assert.equal(marked[1].risk, true);
+});
+
+test("Finder counts text regions independently from image elements", () => {
+  const ui = readFileSync(join(root, "finder-content.js"), "utf8");
+  assert.match(ui, /\["balloon-candidate", "text-region-candidate"\]\.includes\(c\.kind\)/);
+  assert.match(ui, /markMixedInkRegions\(mapped\)/);
+  assert.match(ui, /PageTranslator · Finder 0\.3\.2/);
 });
