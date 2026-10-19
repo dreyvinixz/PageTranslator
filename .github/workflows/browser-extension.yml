@@ -48,6 +48,7 @@ jobs:
       - name: Upload preview ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: PageTranslator-browser-v0.2.0-preview
-          path: PageTranslator-browser-v0.2.0-preview.zip
+          name: PageTranslator-browser-v0.2.3-preview
+          path: PageTranslator-browser-v0.2.3-preview.zip
           retention-days: 30
+          if-no-files-found: error
