@@ -29,20 +29,25 @@ jobs:
       - name: Build MV3 extension
         working-directory: browser-extension
         run: npm run build
+      - name: Unit tests for automatic OCR grouping
+        working-directory: browser-extension
+        run: npm test
       - name: Verify extension assets
         working-directory: browser-extension
         run: |
           npm run verify
           node --check background.js
           node --check content.js
+          node --check auto-content.js
+          node --check regions.js
           node --check offscreen.js
       - name: Package unpacked extension
         run: |
           cd browser-extension/dist
-          zip -r "$GITHUB_WORKSPACE/PageTranslator-browser-v0.1.0-preview.zip" .
+          zip -r "$GITHUB_WORKSPACE/PageTranslator-browser-v0.2.0-preview.zip" .
       - name: Upload preview ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: PageTranslator-browser-v0.1.0-preview
-          path: PageTranslator-browser-v0.1.0-preview.zip
+          name: PageTranslator-browser-v0.2.0-preview
+          path: PageTranslator-browser-v0.2.0-preview.zip
           retention-days: 30

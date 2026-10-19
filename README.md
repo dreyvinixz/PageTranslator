@@ -49,6 +49,15 @@ Veja [docs/QA.md](docs/QA.md) para testes manuais e restrições. O app não bai
 - [ML Kit Translation](https://developers.google.com/ml-kit/language/translation/android)
 - [Termos de atribuição ML Kit](https://developers.google.com/ml-kit/language/translation/translation-terms)
 
+## v0.2.0 — Detecção automática de regiões de HQ no Chrome/Edge (Preview)
+
+A extensão Chromium (Manifest V3) agora tem um modo automático: **um clique no ícone** procura regiões de fala em imagens/canvases visíveis, agrupa linhas do OCR local e apresenta sobreposições que se atualizam quando a leitura rola. **Não identifica perfeitamente o contorno dos balões**; trata-se de agrupamento geométrico de linhas, com seleção manual preservada.
+
+A tradução local é tentada quando suportada pelo navegador. A tradução online de vários balões só começa **depois de ativar explicitamente "Online: ativar"**, pois transmite o texto reconhecido à MyMemory (limite de 30 pedidos por sessão). Sem consentimento, o OCR funciona localmente sem enviar a HQ.
+
+Para instalar, baixe o artifact **PageTranslator-browser-v0.2.0-preview** da [GitHub Action](https://github.com/dreyvinixz/PageTranslator/actions/workflows/browser-extension.yml), extraia até obter **manifest.json** e carregue a pasta em chrome://extensions ou edge://extensions com Modo do desenvolvedor. Consulte [docs/WEB_EXTENSION.md](docs/WEB_EXTENSION.md) para QA, privacidade e limitações.
+
+
 ## v0.1.0 — Preview (Chrome e Edge)
 
 Além do aplicativo Android, o PageTranslator possui agora uma **extensão de navegador Chromium (Manifest V3)** para traduzir regiões selecionadas de HQs em páginas web.

@@ -9,7 +9,7 @@ rmSync(dist, { recursive: true, force: true });
 mkdirSync(join(vendor, "core"), { recursive: true });
 mkdirSync(join(vendor, "lang"), { recursive: true });
 
-for (const name of ["manifest.json", "background.js", "content.js", "offscreen.html", "offscreen.js"]) {
+for (const name of ["manifest.json", "background.js", "content.js", "auto-content.js", "regions.js", "offscreen.html", "offscreen.js"]) {
   copyFileSync(join(root, name), join(dist, name));
 }
 
