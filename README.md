@@ -48,3 +48,17 @@ Veja [docs/QA.md](docs/QA.md) para testes manuais e restrições. O app não bai
 - [ML Kit Text Recognition](https://developers.google.com/ml-kit/vision/text-recognition/v2/android)
 - [ML Kit Translation](https://developers.google.com/ml-kit/language/translation/android)
 - [Termos de atribuição ML Kit](https://developers.google.com/ml-kit/language/translation/translation-terms)
+
+## v0.1.0 — Preview (Chrome e Edge)
+
+Além do aplicativo Android, o PageTranslator possui agora uma **extensão de navegador Chromium (Manifest V3)** para traduzir regiões selecionadas de HQs em páginas web.
+
+- Selecione um balão com o mouse, sem capturar a tela inteira continuamente.
+- OCR local com Tesseract.js (modelo inglês empacotado na extensão).
+- Veja o inglês original e tente tradução local com Translator API quando disponível.
+- Opcionalmente, clique em **Traduzir online** para enviar apenas o texto reconhecido ao serviço MyMemory; screenshots nunca são enviados.
+- Um painel flutuante exibe a tradução sobre a página; não modifica os pixels do quadrinho.
+
+**Instalação:** baixe o artifact da execução **Browser Extension · Preview** em [Actions](https://github.com/dreyvinixz/PageTranslator/actions/workflows/browser-extension.yml), extraia o ZIP, ative o Modo do desenvolvedor em chrome://extensions (ou edge://extensions) e use **Carregar sem compactação** na pasta com o manifest.json.
+
+A versão web é experimental e depende de testes interativos em Chrome e Edge; o build automatizado não equivale à homologação. Veja [docs/WEB_EXTENSION.md](docs/WEB_EXTENSION.md) para instruções, limitações e QA.
