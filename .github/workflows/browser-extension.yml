@@ -1,4 +1,4 @@
-name: Browser Extension · Preview
+name: Browser Finder · Diagnostic Preview
 
 on:
   push:
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-chromium-extension:
+  build-finder:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -23,31 +23,30 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Install dependencies
-        working-directory: browser-extension
-        run: npm install --ignore-scripts --no-audit --no-fund
-      - name: Build MV3 extension
-        working-directory: browser-extension
-        run: npm run build
-      - name: Unit tests for automatic OCR grouping
+      - name: Test Finder heuristics
         working-directory: browser-extension
         run: npm test
-      - name: Verify extension assets
+      - name: Build diagnostic extension
         working-directory: browser-extension
         run: |
+          npm run build
           npm run verify
           node --check background.js
-          node --check content.js
-          node --check auto-content.js
-          node --check regions.js
-          node --check offscreen.js
-      - name: Package unpacked extension
+          node --check finder-core.js
+          node --check finder-text.js
+          node --check finder-content.js
+      - name: Create preview ZIP
+        shell: bash
         run: |
+          set -euo pipefail
           cd browser-extension/dist
-          zip -r "$GITHUB_WORKSPACE/PageTranslator-browser-v0.2.2-preview.zip" .
-      - name: Upload preview ZIP
+          zip -q -r "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.3.1-preview.zip" .
+          test -f "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.3.1-preview.zip"
+          unzip -t "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.3.1-preview.zip" >/dev/null
+      - name: Upload Finder preview
         uses: actions/upload-artifact@v4
         with:
-          name: PageTranslator-browser-v0.2.0-preview
-          path: PageTranslator-browser-v0.2.0-preview.zip
+          name: PageTranslator-Finder-v0.3.1-preview
+          path: PageTranslator-Finder-v0.3.1-preview.zip
+          if-no-files-found: error
           retention-days: 30
