@@ -301,8 +301,7 @@
         rect: {
           x: c.rect.x / scaleX, y: c.rect.y / scaleY,
           width: c.rect.width / scaleX, height: c.rect.height / scaleY
-        }
-      },
+        },
         inkRect: c.inkRect ? {
           x: c.inkRect.x / scaleX, y: c.inkRect.y / scaleY,
           width: c.inkRect.width / scaleX, height: c.inkRect.height / scaleY
