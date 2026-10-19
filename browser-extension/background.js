@@ -3,6 +3,26 @@
 let offscreenCreation = null;
 const OFFSCREEN_PATH = "offscreen.html";
 const MAX_OCR_TEXT = 450;
+const AUTO_TIMEOUT_MS = 45000;
+let autoRunning = false;
+
+async function bounded(promise, milliseconds, label) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(label + ": tempo limite de " + Math.round(milliseconds / 1000) + "s excedido.")), milliseconds);
+      })
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function resetOffscreen() {
+  try { await chrome.offscreen.closeDocument(); } catch { /* may already be closed */ }
+  offscreenCreation = null;
+}
 
 async function ensureOffscreen() {
   const url = chrome.runtime.getURL(OFFSCREEN_PATH);
@@ -72,12 +92,13 @@ async function captureAndRecognize(message, sender) {
 
 let lastAutoCapture = 0;
 async function captureAuto(message, sender) {
+  if (autoRunning) throw new Error("OCR_BUSY: há uma leitura em andamento.");
   const tab = sender.tab;
   if (!tab || !tab.id) throw new Error("Aba de origem indisponível.");
   const { viewport, imageRegions } = message;
   if (!viewport || !Number.isFinite(viewport.width) || !Number.isFinite(viewport.height) ||
       viewport.width < 50 || viewport.height < 50 || viewport.width > 12000 ||
-      viewport.height > 12000 || !Array.isArray(imageRegions) || imageRegions.length > 12) {
+      viewport.height > 12000 || !Array.isArray(imageRegions) || imageRegions.length > 8) {
     throw new Error("Geometria inválida para OCR automático.");
   }
   if (imageRegions.some((r) => !r || ![r.x, r.y, r.width, r.height].every(Number.isFinite) ||
@@ -89,25 +110,39 @@ async function captureAuto(message, sender) {
   if (active.length !== 1 || active[0].id !== tab.id) {
     throw new Error("A aba mudou: escaneamento interrompido.");
   }
-  if (Date.now() - lastAutoCapture < 1500) {
+  if (Date.now() - lastAutoCapture < 2800) {
     throw new Error("OCR_INTERVAL: aguarde antes de fazer uma nova captura.");
   }
-  lastAutoCapture = Date.now();
-  const screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
-  await ensureOffscreen();
-  const response = await chrome.runtime.sendMessage({
-    target: "offscreen",
-    type: "PT_RECOGNIZE_VIEW",
-    screenshot,
-    viewport,
-    imageRegions
-  });
-  if (!response || !response.ok) {
-    throw new Error(response && response.error || "OCR automático indisponível.");
+  autoRunning = true;
+  try {
+    lastAutoCapture = Date.now();
+    const screenshot = await bounded(
+      chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 82 }),
+      12000, "Captura da aba"
+    );
+    await bounded(ensureOffscreen(), 10000, "Inicialização do OCR");
+    const response = await bounded(chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "PT_RECOGNIZE_VIEW",
+      screenshot,
+      viewport,
+      imageRegions
+    }), AUTO_TIMEOUT_MS, "OCR local");
+    if (!response || !response.ok) {
+      throw new Error(response && response.error || "OCR automático indisponível.");
+    }
+    return { regions: response.regions || [], elapsedMs: Number(response.elapsedMs) || 0 };
+  } catch (error) {
+    // A broken/stalled WASM worker should never poison subsequent requests.
+    const msg = String(error.message || error);
+    if (/tempo limite|message channel closed|receiving end does not exist/i.test(msg)) {
+      await bounded(resetOffscreen(), 4000, "Reinício OCR").catch(() => {});
+    }
+    throw new Error("Falha no reconhecimento: " + msg);
+  } finally {
+    autoRunning = false;
   }
-  return { regions: response.regions || [], elapsedMs: Number(response.elapsedMs) || 0 };
 }
-
 async function openManualSelector(tabId) {
   await chrome.tabs.sendMessage(tabId, { type: "PT_AUTO_STOP" }).catch(() => {});
   await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });

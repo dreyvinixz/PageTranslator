@@ -58,7 +58,7 @@ async function recognize(screenshot, rect) {
 
 
 async function recognizeViewport(screenshot, viewport, imageRegions) {
-  if (typeof screenshot !== "string" || !screenshot.startsWith("data:image/png;base64,") ||
+  if (typeof screenshot !== "string" || !/^data:image\/(png|jpeg);base64,/.test(screenshot) ||
       screenshot.length > 25_000_000) throw new Error("Captura inválida ou muito grande.");
   if (!viewport || !Number.isFinite(viewport.width) || !Number.isFinite(viewport.height) ||
       viewport.width < 50 || viewport.height < 50 || !Array.isArray(imageRegions)) {
@@ -67,7 +67,7 @@ async function recognizeViewport(screenshot, viewport, imageRegions) {
   const image = new Image();
   image.src = screenshot;
   await image.decode();
-  const width = Math.max(1, Math.round(image.naturalWidth * Math.min(1, 2600 / image.naturalWidth)));
+  const width = Math.max(1, Math.round(image.naturalWidth * Math.min(1, 1400 / image.naturalWidth, 1400 / image.naturalHeight)));
   const height = Math.max(1, Math.round(image.naturalHeight * (width / image.naturalWidth)));
   const canvas = document.createElement("canvas");
   canvas.width = width;
