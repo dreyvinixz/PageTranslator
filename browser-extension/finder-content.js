@@ -4,7 +4,8 @@
   globalThis.__pageTranslatorFinderLoaded = true;
   const Core = globalThis.PageTranslatorFinderCore;
   const TextDetector = globalThis.PageTranslatorTextCandidates;
-  if (!Core || !TextDetector) throw new Error("PageTranslator: módulos de detecção não foram carregados.");
+  const BalloonFit = globalThis.PageTranslatorBalloonFit;
+  if (!Core || !TextDetector || !BalloonFit) throw new Error("PageTranslator: módulos de detecção não foram carregados.");
 
   let host = null, root = null, mode = "comic", state = "closed", epoch = 0;
   let items = [], inspected = null, lastMs = 0, lastStatus = "Pronto para identificar imagens.";
@@ -97,7 +98,7 @@
     }
     const card = el("section", "pt-menu");
     const head = el("div", "pt-head");
-    head.append(el("span", "", "PageTranslator · Finder 0.3.2"));
+    head.append(el("span", "", "PageTranslator · Finder 0.3.3"));
     head.append(button("×", stop, "pt-close"));
     card.append(head);
     card.append(el("p", "pt-sub",
@@ -133,6 +134,9 @@
         "Largura: " + Math.round(r.width) + " · Altura: " + Math.round(r.height) +
         (c.score === undefined ? "" : "\nÍndice heurístico (não probabilidade): " + Math.round(c.score * 100) + "%") +
         (c.lineCount ? "\nGrupo isolado: " + c.lineCount + " linha(s) de texto." : "") +
+        (c.fit ? "\nEnquadramento: " + (c.fit === "balloon-margin"
+          ? "expandido até a margem visual provável" : c.fit === "review"
+          ? "revisão manual necessária" : "justo ao texto (seguro)") : "") +
         (c.risk ? "\nATENÇÃO: sobreposição de regiões de tinta. Possível mistura." : "") +
         "\nAs bordas podem se sobrepor; o conteúdo precisa permanecer independente."));
     }
@@ -284,7 +288,8 @@
         width: p.rect.width * scaleX, height: p.rect.height * scaleY
       }));
       const shapes = Core.findLightRegions(data, allowed, { limit: 20 });
-      const balloons = TextDetector.findTextCandidates(data, allowed, { limit: 12 });
+      const inkCandidates = TextDetector.findTextCandidates(data, allowed, { limit: 12 });
+      const balloons = BalloonFit.refineSpeechRegions(data, inkCandidates, { limit: 12 });
       if (thisScan !== epoch) return;
       const mapped = balloons.map((c) => {
         const area = c.rect.width * c.rect.height;
@@ -308,9 +313,11 @@
         } : undefined
       }; });
       // Rectangular label overlap is okay; collision of unpadded ink is not.
-      items = [...items, ...Core.markMixedInkRegions(mapped)].slice(0, 28);
+      items = [...items, ...Core.markMixedInkRegions(mapped).map((c) => ({
+        ...c, risk: c.risk || c.fitRisk
+      }))].slice(0, 28);
       lastMs = Math.round(performance.now() - start);
-      render("Finder Quadrinhos: cada caixa amarela é uma unidade independente de texto. Pequenas sobreposições externas são aceitáveis; mistura de conteúdo não. Sem OCR.");
+      render("Finder Quadrinhos: margens estimadas visualmente e falas mantidas isoladas. Vermelho = possível mistura ou enquadramento incerto. Sem OCR.");
     } catch (e) {
       if (thisScan !== epoch) return;
       lastMs = Math.round(performance.now() - start);

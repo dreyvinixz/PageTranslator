@@ -11,6 +11,8 @@ const { findLightRegions, dedupe, overlapArea } = context.PageTranslatorFinderCo
 vm.runInNewContext(readFileSync(join(root, "finder-text.js"), "utf8"), context);
 const { findTextCandidates, groupRows } = context.PageTranslatorTextCandidates;
 const { markMixedInkRegions } = context.PageTranslatorFinderCore;
+vm.runInNewContext(readFileSync(join(root, "finder-fit.js"), "utf8"), context);
+const { refineSpeechRegions } = context.PageTranslatorBalloonFit;
 
 function fixture(width = 160, height = 120) {
   const data = new Uint8ClampedArray(width * height * 4);
@@ -200,5 +202,83 @@ test("Finder counts text regions independently from image elements", () => {
   const ui = readFileSync(join(root, "finder-content.js"), "utf8");
   assert.match(ui, /\["balloon-candidate", "text-region-candidate"\]\.includes\(c\.kind\)/);
   assert.match(ui, /markMixedInkRegions\(mapped\)/);
-  assert.match(ui, /PageTranslator · Finder 0\.3\.2/);
+  assert.match(ui, /PageTranslator · Finder 0\.3\.3/);
+});
+
+test("balloon fitter expands tightly cropped text to bright speech background", () => {
+  const { image, paint } = fixture(240, 160);
+  paint(25, 20, 160, 111, 241, 241, 235);
+  // Text-sized dark strokes leave plenty of light support around ink.
+  for (let i = 0; i < 8; i++) paint(70 + i*8, 60, 73 + i*8, 67, 15, 15, 15);
+  const region = {
+    kind: "text-region-candidate",
+    rect: { x: 66, y: 52, width: 72, height: 26 },
+    inkRect: { x: 70, y: 57, width: 64, height: 15 }
+  };
+  const result = refineSpeechRegions(image, [region]);
+  assert.equal(result.length, 1);
+  assert.ok(result[0].rect.x <= 33, "should find left balloon margin");
+  assert.ok(result[0].rect.y <= 26, "should find upper balloon margin");
+  assert.ok(result[0].rect.width >= 100, "wider than text, includes surrounding balloon");
+  assert.equal(result[0].fit, "balloon-margin");
+});
+
+test("balloon fitting never covers ink assigned to another utterance", () => {
+  const { image, paint } = fixture(280, 200);
+  paint(20, 20, 240, 175, 242, 242, 238);
+  const two = [
+    {
+      rect: {x: 60, y: 36, width: 75, height: 75},
+      inkRect: {x: 70, y: 50, width: 55, height: 17}
+    },
+    {
+      rect: {x: 120, y: 92, width: 80, height: 45},
+      inkRect: {x: 135, y: 108, width: 52, height: 15}
+    }
+  ];
+  const result = refineSpeechRegions(image, two);
+  const foreign = result[1].inkRect;
+  const overlap = context.PageTranslatorBalloonFit.intersection(result[0].rect, foreign);
+  assert.equal(overlap, 0);
+  assert.ok(result[0].rect.width > 0);
+});
+
+test("unframed dark balloons do not expand into unrelated illustrations", () => {
+  const { image } = fixture(220, 120);
+  const text = { rect: {x: 43,y: 39,width: 75,height: 27},
+    inkRect: {x: 50,y: 44,width: 63,height: 17} };
+  const result = refineSpeechRegions(image, [text]);
+  assert.equal(result[0].fit, "text-only");
+  assert.deepEqual({...result[0].rect}, text.rect);
+});
+
+test("frame fitting reports unsafe original crop rather than losing own text", () => {
+  const { image, paint } = fixture(240, 160);
+  paint(15, 15, 210, 145, 246, 245, 244);
+  const a = {rect:{x:20,y:20,width:135,height:100},
+    inkRect:{x:45,y:40,width:50,height:20}};
+  const b = {rect:{x:93,y:45,width:90,height:85},
+    inkRect:{x:95,y:49,width:50,height:25}};
+  const result = refineSpeechRegions(image, [a,b]);
+  assert.equal(result.length, 2);
+  assert.ok(["review","text-only","balloon-margin"].includes(result[0].fit));
+  // Even with ambiguous speech ownership the function never fuses candidates.
+  assert.ok(result[0].inkRect.width === a.inkRect.width);
+  assert.ok(result[1].inkRect.width === b.inkRect.width);
+});
+
+test("caption fitter crosses a thin dark frame to reach its light outer margin", () => {
+  const { image, paint } = fixture(240, 150);
+  paint(32, 24, 193, 115, 246, 246, 242);
+  // A short horizontal black outline inside the search path.
+  paint(45, 42, 178, 45, 30, 30, 30);
+  for (let i = 0; i < 10; i++) paint(50 + i*11, 66, 55 + i*11, 75, 24, 24, 24);
+  const region = {
+    rect: { x: 42, y: 61, width: 150, height: 31 },
+    inkRect: { x: 49, y: 65, width: 127, height: 20 }
+  };
+  const found = refineSpeechRegions(image, [region])[0];
+  assert.ok(found.rect.y <= 31, "must find outer margin above a short black border");
+  assert.ok(found.rect.width >= region.rect.width);
+  assert.equal(found.fitRisk, false);
 });
