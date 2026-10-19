@@ -267,6 +267,7 @@
       lastScan = Date.now();
       const response = await chrome.runtime.sendMessage({
         type: "PT_CAPTURE_VIEW",
+        scanId: currentEpoch,
         viewport: { width: innerWidth, height: innerHeight },
         imageRegions: regions
       });
@@ -369,10 +370,14 @@
     // Avoid watching every DOM mutation in infinite-scroll comic readers:
     // thousands of lazy-loaded panels can otherwise restart scans forever.
     // Load/scroll/resize events are sufficient to request a new visible scan.
-    scheduleScan(200);
+    scheduleScan(450);
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, respond) => {
+    if (message && message.type === "PT_SCAN_PROGRESS") {
+      if (active && busy && message.scanId === epoch) setStatus(message.label);
+      return;
+    }
     if (message && message.type === "PT_AUTO_TOGGLE") {
       if (active) stop(); else start();
       respond({ ok: true, enabled: active });
