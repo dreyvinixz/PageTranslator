@@ -28,6 +28,7 @@
     ".pt-num{position:absolute;left:0;top:0;padding:1px 5px;background:#006998;color:white;border-radius:3px;font:700 11px system-ui}",
     ".pt-rect[data-kind=balloon-candidate] .pt-num,.pt-rect[data-kind=text-region-candidate] .pt-num{background:#99631b}",
     ".pt-selected{outline:3px solid white;outline-offset:1px}",
+    ".pt-rect[data-risk=mixing]{border-color:#ff6073;border-style:solid}",
     ".pt-layer{position:fixed;inset:0;pointer-events:none}",
     ".pt-select{position:fixed;inset:0;z-index:2;background:#0002;pointer-events:auto;cursor:crosshair;touch-action:none}",
     ".pt-preview{position:absolute;border:2px solid #20d3ff;background:#09a9e52c;pointer-events:none}",
@@ -84,6 +85,7 @@
         render("Região #" + (i + 1) + " selecionada. Confira as informações abaixo.");
       }, "pt-rect" + (inspected === i ? " pt-selected" : ""));
       outline.setAttribute("data-kind", c.kind);
+      if (c.risk) outline.setAttribute("data-risk", "mixing");
       outline.setAttribute("title", c.label);
       outline.setAttribute("aria-label", c.label + " #" + (i + 1));
       Object.assign(outline.style, {
@@ -95,7 +97,7 @@
     }
     const card = el("section", "pt-menu");
     const head = el("div", "pt-head");
-    head.append(el("span", "", "PageTranslator · Finder 0.3.0"));
+    head.append(el("span", "", "PageTranslator · Finder 0.3.2"));
     head.append(button("×", stop, "pt-close"));
     card.append(head);
     card.append(el("p", "pt-sub",
@@ -110,10 +112,10 @@
     actions.append(button("Identificar imagens (Finder)", startFinder, "pt-primary"));
     card.append(actions);
     if (items.length) {
-      const images = items.filter((c) => c.kind !== "balloon-candidate").length;
-      const balloons = items.length - images;
+      const images = items.filter((c) => !["balloon-candidate", "text-region-candidate"].includes(c.kind)).length;
+      const balloons = items.filter((c) => ["balloon-candidate", "text-region-candidate"].includes(c.kind)).length;
       card.append(el("div", "pt-count",
-        images + " imagem(ns) / " + balloons + " possível(is) balão(ões) · " + lastMs + " ms"));
+        images + " imagem(ns) / " + balloons + " região(ões) de fala candidata(s) · " + lastMs + " ms"));
       const controls = el("div", "pt-row");
       controls.append(button("Limpar caixas", () => {
         items = [];
@@ -129,11 +131,13 @@
         "#" + (inspected + 1) + " · " + c.label + "\n" +
         "X: " + Math.round(r.x) + " · Y: " + Math.round(r.y) + "\n" +
         "Largura: " + Math.round(r.width) + " · Altura: " + Math.round(r.height) +
-        (c.score === undefined ? "" : "\nÍndice heurístico: " + Math.round(c.score * 100) + "%") +
-        "\nEste resultado não confirma que seja um balão."));
+        (c.score === undefined ? "" : "\nÍndice heurístico (não probabilidade): " + Math.round(c.score * 100) + "%") +
+        (c.lineCount ? "\nGrupo isolado: " + c.lineCount + " linha(s) de texto." : "") +
+        (c.risk ? "\nATENÇÃO: sobreposição de regiões de tinta. Possível mistura." : "") +
+        "\nAs bordas podem se sobrepor; o conteúdo precisa permanecer independente."));
     }
     card.append(el("div", "pt-small",
-      "Genérico: imagens, canvas e fundos HTML. Quadrinhos: busca traços de letras em fundos claros e usa contornos como apoio. Amarelo = hipótese, sem OCR."));
+      "Genérico: elementos visuais. Quadrinhos: agrupa linhas de texto separadamente para reduzir mistura. Amarelo = recorte sugerido, sem OCR."));
     shadow.append(card);
   }
 
@@ -298,10 +302,27 @@
           x: c.rect.x / scaleX, y: c.rect.y / scaleY,
           width: c.rect.width / scaleX, height: c.rect.height / scaleY
         }
+      },
+        inkRect: c.inkRect ? {
+          x: c.inkRect.x / scaleX, y: c.inkRect.y / scaleY,
+          width: c.inkRect.width / scaleX, height: c.inkRect.height / scaleY
+        } : undefined
       }; });
+      // Check ownership of INK, not padded crop borders.
+      // Overlap of outer boxes is normal; sharing text pixels is suspicious.
+      for (let i = 0; i < mapped.length; i++) {
+        const a = mapped[i].inkRect;
+        if (!a) continue;
+        mapped[i].risk = mapped.some((other, j) => {
+          if (i === j || !other.inkRect) return false;
+          const b = other.inkRect;
+          return Core.overlapArea(a, b) / Math.min(
+            a.width * a.height, b.width * b.height) > 0.12;
+        });
+      }
       items = [...items, ...mapped].slice(0, 28);
       lastMs = Math.round(performance.now() - start);
-      render("Finder Quadrinhos concluído: azul = imagens; amarelo = regiões com traços semelhantes a letras. Contornos ajudam a caracterizar o formato. Sem OCR.");
+      render("Finder Quadrinhos: cada caixa amarela é uma unidade independente de texto. Pequenas sobreposições externas são aceitáveis; mistura de conteúdo não. Sem OCR.");
     } catch (e) {
       if (thisScan !== epoch) return;
       lastMs = Math.round(performance.now() - start);
