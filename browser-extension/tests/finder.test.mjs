@@ -8,6 +8,8 @@ const context = {};
 context.globalThis = context;
 vm.runInNewContext(readFileSync(join(root, "finder-core.js"), "utf8"), context);
 const { findLightRegions, dedupe, overlapArea } = context.PageTranslatorFinderCore;
+vm.runInNewContext(readFileSync(join(root, "finder-text.js"), "utf8"), context);
+const { findTextCandidates } = context.PageTranslatorTextCandidates;
 
 function fixture(width = 160, height = 120) {
   const data = new Uint8ClampedArray(width * height * 4);
@@ -100,4 +102,34 @@ test("Finder preview avoids OCR and remote translation", () => {
   assert.match(content, /Quadrinhos/);
   assert.doesNotMatch(background + content, /Tesseract|PT_RECOGNIZE|PT_TRANSLATE_REMOTE|mymemory/i);
   assert.deepEqual(manifest.permissions, ["activeTab", "scripting"]);
+});
+
+test("letter strokes on a bright caption yield one text-bearing region", () => {
+  const { image, paint } = fixture(250, 150);
+  paint(32, 24, 150, 84, 238, 244, 241);
+  for (let i = 0; i < 10; i++) paint(43 + i * 9, 43, 47 + i * 9, 51, 35, 35, 35);
+  const candidates = findTextCandidates(image, [{ x: 20, y: 10, width: 170, height: 110 }]);
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].kind, "text-region-candidate");
+  assert.ok(candidates[0].characters >= 6);
+});
+
+test("text detector rejects a blank bright window with grilles", () => {
+  const { image, paint } = fixture(250, 150);
+  paint(20, 18, 180, 120, 219, 233, 221);
+  for (let x = 55; x < 160; x += 42) paint(x, 18, x + 5, 120, 36, 49, 39);
+  const candidates = findTextCandidates(image, [{ x: 10, y: 10, width: 190, height: 120 }]);
+  assert.equal(candidates.length, 0);
+});
+
+test("text detector produces separate candidates for distant balloons", () => {
+  const { image, paint } = fixture(260, 170);
+  paint(20, 20, 115, 62, 245, 245, 242);
+  paint(134, 101, 245, 147, 235, 244, 239);
+  for (let i = 0; i < 8; i++) {
+    paint(28 + i * 9, 34, 32 + i * 9, 42, 22, 30, 33);
+    paint(142 + i * 10, 117, 146 + i * 10, 125, 19, 28, 29);
+  }
+  const candidates = findTextCandidates(image, [{ x: 0, y: 0, width: 260, height: 170 }]);
+  assert.equal(candidates.length, 2);
 });
