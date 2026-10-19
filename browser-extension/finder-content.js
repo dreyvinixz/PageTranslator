@@ -3,7 +3,8 @@
   if (globalThis.__pageTranslatorFinderLoaded) return;
   globalThis.__pageTranslatorFinderLoaded = true;
   const Core = globalThis.PageTranslatorFinderCore;
-  if (!Core) throw new Error("PageTranslator: finder-core.js não foi carregado.");
+  const TextDetector = globalThis.PageTranslatorTextCandidates;
+  if (!Core || !TextDetector) throw new Error("PageTranslator: módulos de detecção não foram carregados.");
 
   let host = null, root = null, mode = "comic", state = "closed", epoch = 0;
   let items = [], inspected = null, lastMs = 0, lastStatus = "Pronto para identificar imagens.";
@@ -23,9 +24,9 @@
     ".pt-status{padding:7px 9px;margin-top:10px;background:#263d55;border-radius:7px;white-space:pre-wrap;font-size:12px}",
     ".pt-count{margin-top:9px;color:#a9e1ff;font-size:12px}",
     ".pt-rect{position:fixed;border:2px solid #21bbef;background:rgba(24,171,222,.09);pointer-events:auto;border-radius:5px;cursor:pointer;padding:0;box-shadow:0 0 0 1px #0b263e55}",
-    ".pt-rect[data-kind=balloon-candidate]{border-color:#ffcb58;background:rgba(255,203,88,.11);border-style:dashed}",
+    ".pt-rect[data-kind=balloon-candidate],.pt-rect[data-kind=text-region-candidate]{border-color:#ffcb58;background:rgba(255,203,88,.11);border-style:dashed}",
     ".pt-num{position:absolute;left:0;top:0;padding:1px 5px;background:#006998;color:white;border-radius:3px;font:700 11px system-ui}",
-    ".pt-rect[data-kind=balloon-candidate] .pt-num{background:#99631b}",
+    ".pt-rect[data-kind=balloon-candidate] .pt-num,.pt-rect[data-kind=text-region-candidate] .pt-num{background:#99631b}",
     ".pt-selected{outline:3px solid white;outline-offset:1px}",
     ".pt-layer{position:fixed;inset:0;pointer-events:none}",
     ".pt-select{position:fixed;inset:0;z-index:2;background:#0002;pointer-events:auto;cursor:crosshair;touch-action:none}",
@@ -132,7 +133,7 @@
         "\nEste resultado não confirma que seja um balão."));
     }
     card.append(el("div", "pt-small",
-      "Genérico: imagens, canvas e fundos de elementos HTML. Quadrinhos: acrescenta uma busca visual por áreas claras que podem conter falas. As caixas amarelas são hipóteses, não OCR."));
+      "Genérico: imagens, canvas e fundos HTML. Quadrinhos: busca traços de letras em fundos claros e usa contornos como apoio. Amarelo = hipótese, sem OCR."));
     shadow.append(card);
   }
 
@@ -233,7 +234,7 @@
     inspected = null;
     items = collectImages();
     render("Imagens encontradas. " +
-      (mode === "comic" ? "Procurando possíveis balões claros…" : "Varredura Genérica concluída."));
+      (mode === "comic" ? "Procurando padrões de letras e possíveis balões…" : "Varredura Genérica concluída."));
     if (mode !== "comic") {
       lastMs = Math.round(performance.now() - start);
       render("Finder Genérico concluído. As caixas azuis indicam elementos de imagem.");
@@ -278,20 +279,29 @@
         x: p.rect.x * scaleX, y: p.rect.y * scaleY,
         width: p.rect.width * scaleX, height: p.rect.height * scaleY
       }));
-      const balloons = Core.findLightRegions(data, allowed, { limit: 12 });
+      const shapes = Core.findLightRegions(data, allowed, { limit: 20 });
+      const balloons = TextDetector.findTextCandidates(data, allowed, { limit: 12 });
       if (thisScan !== epoch) return;
-      const mapped = balloons.map((c) => ({
-        ...c, label: c.shape === "rectangular" ? "Possível caixa narrativa retangular" :
-          c.shape === "rounded" ? "Possível balão arredondado" :
-          "Possível região de fala (formato incerto)",
+      const mapped = balloons.map((c) => {
+        const area = c.rect.width * c.rect.height;
+        const supporting = shapes.find((s) => {
+          const areaShape = s.rect.width * s.rect.height;
+          const overlap = Core.overlapArea(c.rect, s.rect);
+          return areaShape >= area * 0.55 && areaShape <= area * 1.6 &&
+            overlap / Math.min(area, areaShape) >= 0.55;
+        });
+        return {
+        ...c, label: supporting?.shape === "rectangular" ? "Texto em possível caixa retangular" :
+          supporting?.shape === "rounded" ? "Texto em possível balão arredondado" :
+          "Região com traços de letras em fundo claro",
         rect: {
           x: c.rect.x / scaleX, y: c.rect.y / scaleY,
           width: c.rect.width / scaleX, height: c.rect.height / scaleY
         }
-      }));
+      }; });
       items = [...items, ...mapped].slice(0, 28);
       lastMs = Math.round(performance.now() - start);
-      render("Finder Quadrinhos concluído: azul = imagens; amarelo tracejado = possíveis balões. Não houve OCR.");
+      render("Finder Quadrinhos concluído: azul = imagens; amarelo = regiões com traços semelhantes a letras. Contornos ajudam a caracterizar o formato. Sem OCR.");
     } catch (e) {
       if (thisScan !== epoch) return;
       lastMs = Math.round(performance.now() - start);
