@@ -8,7 +8,9 @@
   const AutoScan = globalThis.PageTranslatorAutoScanner;
   const Association = globalThis.PageTranslatorAssociation;
   const Shortcut = globalThis.PageTranslatorShortcut;
-  if (!Core || !TextDetector || !BalloonFit || !AutoScan || !Association || !Shortcut) throw new Error("PageTranslator: módulos de detecção não foram carregados.");
+  const Instances = globalThis.PageTranslatorInstances;
+  const Language = globalThis.PageTranslatorLanguage;
+  if (!Core || !TextDetector || !BalloonFit || !AutoScan || !Association || !Shortcut || !Instances || !Language) throw new Error("PageTranslator: módulos de detecção não foram carregados.");
 
   let host = null, root = null, mode = "comic", state = "closed", epoch = 0;
   let items = [], inspected = null, lastMs = 0, lastStatus = "Pronto para identificar imagens.";
@@ -16,6 +18,7 @@
   let autoScanner = null;
   let shortcut = Shortcut.DEFAULT, recordingShortcut = false;
   let manualRestore = null;
+  let ocrBusy = false, sourcePreference = "auto", targetPreference = "en";
 
   const css = [
     ":host{all:initial;position:fixed;inset:0;z-index:2147483646;font:13px/1.45 system-ui,sans-serif;pointer-events:none;color:#f6fbff}",
@@ -45,7 +48,9 @@
     ".pt-preview{position:absolute;border:2px solid #20d3ff;background:#09a9e52c;pointer-events:none}.pt-preview[hidden]{display:none}",
     ".pt-tip{position:fixed;left:50%;top:14px;transform:translateX(-50%);padding:9px 12px;border-radius:9px;background:#102239;color:#fff;white-space:nowrap;font-size:13px;pointer-events:none;max-width:95vw}",
     ".pt-details{white-space:pre-wrap;overflow-wrap:anywhere;background:#0c2a42;padding:12px;border:1px solid #345a75;border-radius:10px;margin-top:10px;font-size:12px;line-height:1.65}",
-    ".pt-small{font-size:11px;color:#bbd1e5;margin-top:10px}"
+    ".pt-small{font-size:11px;color:#bbd1e5;margin-top:10px}",
+    ".pt-options{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.pt-field{display:flex;flex-direction:column;gap:3px;font-size:11px;color:#b3ccdf}.pt-field select{background:#17364d;color:#e8fbff;border:1px solid #557e9a;border-radius:8px;padding:7px 10px;font:inherit}",
+    ".pt-ocr-text{margin:10px 0;padding:10px;background:#122f44;border-radius:8px;color:#f6fcff;white-space:pre-wrap;overflow-wrap:anywhere;max-height:200px;overflow:auto}"
   ].join("");
 
   function el(tag, cls = "", value) {
@@ -116,7 +121,7 @@
     logo.alt = "Logotipo PageTranslator";
     const brandText = el("div");
     brandText.append(el("div", "pt-brand-title", "PageTranslator"),
-      el("div", "pt-brand-sub", "FINDER 0.5.0 · PREVIEW"));
+      el("div", "pt-brand-sub", "FINDER 0.6.0 · PREVIEW"));
     brand.append(logo, brandText);
     head.append(brand);
     const close = button("×", stop, "pt-close");
@@ -124,7 +129,7 @@
     head.append(close);
     card.append(head);
     card.append(el("p", "pt-sub",
-      "Diagnóstico de regiões na tela. Esta versão NÃO executa OCR nem traduz."));
+      "Máscaras de instâncias candidatas · OCR PT/EN sob demanda · tradução local quando disponível."));
     card.append(el("div", "pt-section", "Modo de detecção"));
     const modes = el("div", "pt-row");
     modes.append(button("Genérico", () => changeMode("generic"), "", mode === "generic"));
@@ -171,6 +176,7 @@
     if (inspected !== null && items[inspected]) {
       const c = items[inspected], r = c.rect;
       const status = c.status === "REVIEW_REQUIRED" ? "REVISÃO NECESSÁRIA" :
+        c.status === "PROVISIONAL_INSTANCE" ? "Instância com máscara (provisória)" :
         c.status === "CANDIDATE" ? "Hipótese de associação" :
         c.status === "TEXT_ONLY" ? "Texto sem balão confirmado" :
         "Seleção manual: não analisada";
@@ -191,18 +197,61 @@
         "Balões candidatos à associação: " +
           (c.candidateBalloonIds?.join(", ") || "nenhum") + "\n" +
         "Grupos de texto vizinhos: " + neighbors + "\n" +
-        "Idioma do texto: não identificado (sem OCR)\n" +
-        "Tradução suportada: ainda não verificada\n" +
+        "Idioma do texto: " + (c.ocr?.language || "ainda não identificado") + "\n" +
+        "Tradução: " + (c.translation ? "disponível neste par" : "ainda não verificada") + "\n" +
+        (c.maskPixelCount ? "Máscara da instância: " + c.maskPixelCount + " pixels\n" : "") +
         "Recorte: X " + Math.round(r.x) + " · Y " + Math.round(r.y) +
           " · " + Math.round(r.width) + " × " + Math.round(r.height) + "\n" +
         (c.fit ? "Enquadramento: " + c.fit + "\n" : "") +
         (c.reason ? "Diagnóstico: " + c.reason + "\n" : "") +
         (c.risk ? "ATENÇÃO: não usar este recorte para tradução automática." :
           "Geometria candidata; validação visual ainda necessária.")));
+      const options = el("div", "pt-options");
+      function dropdown(labelText,current,values,callback) {
+        const holder=el("label","pt-field");
+        holder.append(el("span","",labelText));
+        const select=el("select","");
+        for(const [value,label] of values){
+          const option=el("option","",label);
+          option.value=value;
+          if(value===current)option.selected=true;
+          select.append(option);
+        }
+        select.addEventListener("change",()=>callback(select.value));
+        holder.append(select);
+        return holder;
+      }
+      options.append(
+        dropdown("Idioma de origem",sourcePreference,
+          [["auto","Automático"],["pt","Português"],["en","Inglês"]],
+          v=>{sourcePreference=v;chrome.storage.local.set({sourcePreference:v});}),
+        dropdown("Traduzir para",targetPreference,
+          Object.entries(Language.languages),
+          v=>{targetPreference=v;chrome.storage.local.set({targetPreference:v});})
+      );
+      card.append(options);
+      if(c.ocr?.text) {
+        card.append(el("div","pt-section","Texto reconhecido · OCR local"));
+        card.append(el("div","pt-ocr-text",c.ocr.text));
+        if(c.translation) {
+          card.append(el("div","pt-section","Tradução"));
+          card.append(el("div","pt-ocr-text",c.translation));
+        }
+        const tr=button("Traduzir localmente",()=>translateSelected(inspected),"pt-primary");
+        tr.disabled=ocrBusy || c.ocr.language==="und" && sourcePreference==="auto";
+        card.append(tr);
+      } else {
+        const read=button(ocrBusy?"Reconhecendo texto…":"Ler texto (OCR local)",
+          ()=>readSelected(inspected),"pt-primary");
+        read.disabled=ocrBusy || Boolean(c.risk);
+        card.append(read);
+      }
+      if(c.risk)card.append(el("div","pt-small",
+        "Recorte ambíguo: refine manualmente antes do OCR."));
       card.append(button("Refinar enquadramento manualmente", () => startManual(), "pt-primary"));
     }
     card.append(el("div", "pt-small",
-      "Auto após rolar, com pausa quando a página estabiliza e limite de capturas. Genérico = elementos visuais; Quadrinhos = hipóteses de fala sem OCR."));
+      "O auto-scroll permanece independente do OCR. As máscaras são estimativas geométricas; não implicam balões semanticamente confirmados."));
     shadow.append(card);
   }
 
@@ -363,6 +412,7 @@
       }));
       const shapes = Core.findLightRegions(data, allowed, { limit: 20 });
       const inkCandidates = TextDetector.findTextCandidates(data, allowed, { limit: 12 });
+      const instances = Instances.buildInstances(data, shapes, inkCandidates);
       const balloons = BalloonFit.refineSpeechRegions(data, inkCandidates, { limit: 12 });
       if (thisScan !== epoch) return;
       const mapped = balloons.map((c) => {
@@ -390,16 +440,29 @@
       const safeCandidates = Core.markMixedInkRegions(mapped).map((c) => ({
         ...c, risk: c.risk || c.fitRisk
       }));
-      const assigned = Association.associate(shapes, safeCandidates).map(c => ({
+      const assigned = Association.associate(shapes, safeCandidates).map((c,i) => {
+        const instance=instances[i];
+        return {
         ...c,
+        ...(instance ? {
+          instanceId:instance.id,
+          maskPixelCount:instance.maskPixelCount,
+          maskPolygon:instance.maskPolygon.map(([x,y])=>[x/scaleX,y/scaleY]),
+          splitFromConnectedShape:instance.splitFromConnectedShape,
+          balloonId:instance.id,
+          status:(c.risk||instance.risk)?"REVIEW_REQUIRED":"PROVISIONAL_INSTANCE",
+          risk:Boolean(c.risk||instance.risk),
+          rect:{x:instance.bbox.x/scaleX,y:instance.bbox.y/scaleY,
+            width:instance.bbox.width/scaleX,height:instance.bbox.height/scaleY}
+        }:{}),
         label: c.status === "REVIEW_REQUIRED" ? "Região com associação ambígua" :
           c.balloonHypothesis === "rounded" ? "Possível balão arredondado com texto" :
           c.balloonHypothesis === "caption" ? "Possível caixa narrativa com texto" :
           "Texto em região visual ainda não classificada"
-      }));
+      }; });
       items = [...items, ...assigned].slice(0, 28);
       lastMs = Math.round(performance.now() - start);
-      render("Finder Quadrinhos: falas candidatas isoladas. Atualização automática durante a leitura. Vermelho = revisão necessária. Sem OCR.");
+      render("Finder Quadrinhos: falas candidatas isoladas. Atualização automática durante a leitura. Vermelho = revisão necessária. Clique na caixa para OCR local sob demanda.");
     } catch (e) {
       if (thisScan !== epoch) return;
       lastMs = Math.round(performance.now() - start);
