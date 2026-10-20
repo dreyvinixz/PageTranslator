@@ -98,5 +98,43 @@
       .slice(0, Math.max(0, Math.min(20, maxRegions)));
   }
 
-  root.PageTranslatorRegions = { collectLines, groupLines };
+  // v0.6 OCR-first fallback: conservative grouping to avoid bridging two close
+  // speeches even when they sit in the same illustration/white background.
+  function groupLinesConservative(lines, maxRegions = 24) {
+    const input = (Array.isArray(lines) ? lines : []).filter(line =>
+      finiteRect(line?.bbox) && typeof line.text === "string" && line.text.trim())
+      .sort((a,b) => a.bbox.y0-b.bbox.y0 || a.bbox.x0-b.bbox.x0);
+    const groups=[];
+    for (const line of input.slice(0,180)) {
+      const a=line.bbox, aHeight=a.y1-a.y0, aWidth=a.x1-a.x0;
+      let best=null, bestCost=Infinity;
+      for(const group of groups) {
+        const b=group.last.bbox, bHeight=b.y1-b.y0, bWidth=b.x1-b.x0;
+        const gap=a.y0-b.y1;
+        const maxGap=Math.max(3,Math.min(9,Math.round(Math.min(aHeight,bHeight)*.65)));
+        if(gap< -Math.min(aHeight,bHeight)*.25 || gap>maxGap)continue;
+        const horizontal=overlap(a.x0,a.x1,b.x0,b.x1)/Math.min(aWidth,bWidth);
+        if(horizontal<.35)continue;
+        const offset=Math.abs((a.x0+a.x1-b.x0-b.x1)/2);
+        if(offset>Math.max(14,Math.max(aWidth,bWidth)*.42))continue;
+        const cost=Math.max(0,gap)+2*(1-horizontal);
+        if(cost<bestCost){best=group;bestCost=cost;}
+      }
+      if(!best)groups.push({text:line.text.trim(),bbox:{...a},
+        last:line,confidence:Number(line.confidence)||0,count:1});
+      else{
+        best.text+=" "+line.text.trim();
+        best.bbox={
+          x0:Math.min(best.bbox.x0,a.x0),y0:Math.min(best.bbox.y0,a.y0),
+          x1:Math.max(best.bbox.x1,a.x1),y1:Math.max(best.bbox.y1,a.y1)
+        };
+        best.count++;best.confidence+=Number(line.confidence)||0;best.last=line;
+      }
+    }
+    return groups.slice(0,Math.max(0,Math.min(maxRegions,30))).map(g=>({
+      text:g.text,confidence:Math.round(g.confidence/g.count),
+      bbox:g.bbox,lineCount:g.count
+    }));
+  }
+  root.PageTranslatorRegions = { collectLines, groupLines, groupLinesConservative };
 })(typeof globalThis === "object" ? globalThis : self);

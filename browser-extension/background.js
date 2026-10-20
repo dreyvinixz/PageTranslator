@@ -14,14 +14,44 @@ chrome.action.onClicked.addListener(async (tab) => {
   try {
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ["finder-core.js", "finder-text.js", "finder-fit.js", "finder-association.js", "finder-shortcut.js", "finder-auto.js", "finder-content.js"]
+      files: ["finder-core.js", "finder-text.js", "finder-fit.js", "finder-association.js", "finder-instances.js", "finder-language.js", "finder-shortcut.js", "finder-auto.js", "regions.js", "finder-content.js"]
     });
     await chrome.tabs.sendMessage(tab.id, { type: "PT_FINDER_OPEN" });
   } catch (error) {
     console.error("PageTranslator Finder: falha ao abrir interface.", error);
   }
 });
+let offscreenInit = null;
+async function ensureOCRDocument() {
+  if (await chrome.offscreen.hasDocument()) return;
+  if (!offscreenInit) offscreenInit = chrome.offscreen.createDocument({
+    url:"finder-offscreen.html", reasons:["BLOBS"],
+    justification:"OCR local de recortes escolhidos pelo usuário, sem acesso remoto"
+  }).finally(()=>{offscreenInit=null;});
+  await offscreenInit;
+}
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "PT_FINDER_OCR") {
+    (async () => {
+      if (!sender.tab?.id || !/^https?:\/\//.test(sender.tab.url || ""))
+        throw Error("OCR autorizado somente em aba web.");
+      const active=await chrome.tabs.query({active:true,windowId:sender.tab.windowId});
+      if (active[0]?.id !== sender.tab.id) throw Error("A aba não está mais ativa.");
+      if (typeof message.image!=="string" || message.image.length>6_000_000)
+        throw Error("Recorte de OCR inválido ou muito grande.");
+      const lang=["por","eng","por+eng"].includes(message.language)
+        ? message.language:"por+eng";
+      await ensureOCRDocument();
+      const response=await withTimeout(chrome.runtime.sendMessage({
+        target:"PT_OFFSCREEN",type:"PT_OCR_CROP",image:message.image,language:lang
+      }),60000);
+      if (!response?.ok) throw Error(response?.error || "OCR sem resultado.");
+      return {text:response.text,confidence:response.confidence,lines:response.lines};
+    })().then(x=>sendResponse({ok:true,...x}))
+      .catch(e=>sendResponse({ok:false,error:String(e.message||e)}));
+    return true;
+  }
+
   if (message?.type !== "PT_FINDER_CAPTURE") return;
   (async () => {
     if (!sender.tab?.id) throw new Error("Solicitação fora de uma página web.");

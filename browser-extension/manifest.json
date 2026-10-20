@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "PageTranslator Finder — Preview",
-  "version": "0.5.0",
-  "description": "Finder de HQ: varredura automática, associação conservadora balão–texto e atalho personalizável; sem OCR ou tradução.",
+  "version": "0.6.0",
+  "description": "Segmentação geométrica de instâncias, OCR local português/inglês, idioma e tradução local quando suportada.",
   "minimum_chrome_version": "116",
   "permissions": [
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "offscreen"
   ],
   "background": {
     "service_worker": "background.js"

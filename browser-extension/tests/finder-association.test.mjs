@@ -86,16 +86,16 @@ test("shortcuts skip typing fields; manifest only adds narrow storage permission
   assert.equal(Shortcut.editable({ closest: () => ({ tagName: "INPUT" }) }), true);
   assert.equal(Shortcut.editable({ closest: () => null }), false);
   const manifest = JSON.parse(readFileSync(join(root, "manifest.json"), "utf8"));
-  assert.deepEqual(manifest.permissions, ["activeTab", "scripting", "storage"]);
+  assert.deepEqual(manifest.permissions, ["activeTab", "scripting", "storage", "offscreen"]);
   assert.equal(manifest.host_permissions, undefined);
   assert.deepEqual(manifest.web_accessible_resources[0].resources, ["assets/logo.svg"]);
 });
 
-test("new diagnostic pipeline is explicitly non-OCR", () => {
+test("OCR and language are opt-in in Finder v0.6", () => {
   const source = readFileSync(join(root, "finder-content.js"), "utf8");
-  assert.match(source, /Association\.associate\(shapes, safeCandidates\)/);
+  assert.match(source, /Association\.associate\(viewportShapes, safeCandidates\)/);
   assert.match(source, /chrome\.storage\.local/);
   assert.match(source, /shortcutFromEvent/);
-  assert.match(source, /Idioma do texto: não identificado \(sem OCR\)/);
+  assert.match(source, /Idioma do texto:/);
   assert.doesNotMatch(source, /PT_RECOGNIZE|PT_TRANSLATE_REMOTE|mymemory/i);
 });

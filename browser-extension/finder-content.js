@@ -8,7 +8,10 @@
   const AutoScan = globalThis.PageTranslatorAutoScanner;
   const Association = globalThis.PageTranslatorAssociation;
   const Shortcut = globalThis.PageTranslatorShortcut;
-  if (!Core || !TextDetector || !BalloonFit || !AutoScan || !Association || !Shortcut) throw new Error("PageTranslator: módulos de detecção não foram carregados.");
+  const Instances = globalThis.PageTranslatorInstances;
+  const Language = globalThis.PageTranslatorLanguage;
+  const OCRRegions = globalThis.PageTranslatorRegions;
+  if (!Core || !TextDetector || !BalloonFit || !AutoScan || !Association || !Shortcut || !Instances || !Language || !OCRRegions) throw new Error("PageTranslator: módulos de detecção não foram carregados.");
 
   let host = null, root = null, mode = "comic", state = "closed", epoch = 0;
   let items = [], inspected = null, lastMs = 0, lastStatus = "Pronto para identificar imagens.";
@@ -16,6 +19,7 @@
   let autoScanner = null;
   let shortcut = Shortcut.DEFAULT, recordingShortcut = false;
   let manualRestore = null;
+  let ocrBusy = false, sourcePreference = "auto", targetPreference = "en";
 
   const css = [
     ":host{all:initial;position:fixed;inset:0;z-index:2147483646;font:13px/1.45 system-ui,sans-serif;pointer-events:none;color:#f6fbff}",
@@ -45,7 +49,9 @@
     ".pt-preview{position:absolute;border:2px solid #20d3ff;background:#09a9e52c;pointer-events:none}.pt-preview[hidden]{display:none}",
     ".pt-tip{position:fixed;left:50%;top:14px;transform:translateX(-50%);padding:9px 12px;border-radius:9px;background:#102239;color:#fff;white-space:nowrap;font-size:13px;pointer-events:none;max-width:95vw}",
     ".pt-details{white-space:pre-wrap;overflow-wrap:anywhere;background:#0c2a42;padding:12px;border:1px solid #345a75;border-radius:10px;margin-top:10px;font-size:12px;line-height:1.65}",
-    ".pt-small{font-size:11px;color:#bbd1e5;margin-top:10px}"
+    ".pt-small{font-size:11px;color:#bbd1e5;margin-top:10px}",
+    ".pt-options{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.pt-field{display:flex;flex-direction:column;gap:3px;font-size:11px;color:#b3ccdf}.pt-field select{background:#17364d;color:#e8fbff;border:1px solid #557e9a;border-radius:8px;padding:7px 10px;font:inherit}",
+    ".pt-ocr-text{margin:10px 0;padding:10px;background:#122f44;border-radius:8px;color:#f6fcff;white-space:pre-wrap;overflow-wrap:anywhere;max-height:200px;overflow:auto}"
   ].join("");
 
   function el(tag, cls = "", value) {
@@ -105,6 +111,22 @@
         left: r.x + "px", top: r.y + "px", width: r.width + "px", height: r.height + "px"
       });
       outline.textContent = "";
+      if(c.maskPolygon?.length>=4) {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg","svg");
+        svg.setAttribute("viewBox","0 0 "+r.width+" "+r.height);
+        svg.style.cssText="position:fixed;pointer-events:none;overflow:visible;"+
+          "left:"+r.x+"px;top:"+r.y+"px;width:"+r.width+"px;height:"+r.height+"px";
+        const poly = document.createElementNS("http://www.w3.org/2000/svg","polygon");
+        poly.setAttribute("points",c.maskPolygon.map(([x,y])=>
+          (x-r.x).toFixed(1)+","+(y-r.y).toFixed(1)).join(" "));
+        poly.setAttribute("fill",c.risk?"rgba(241,84,111,.08)":"rgba(11,217,232,.08)");
+        poly.setAttribute("stroke",c.risk?"#f15b73":"#04e0e9");
+        poly.setAttribute("stroke-width","2");
+        svg.append(poly);
+        layer.append(svg);
+        outline.style.borderColor="transparent";
+        outline.style.background="transparent";
+      }
       outline.append(el("span", "pt-num", String(i + 1)));
       layer.append(outline);
     }
@@ -116,7 +138,7 @@
     logo.alt = "Logotipo PageTranslator";
     const brandText = el("div");
     brandText.append(el("div", "pt-brand-title", "PageTranslator"),
-      el("div", "pt-brand-sub", "FINDER 0.5.0 · PREVIEW"));
+      el("div", "pt-brand-sub", "FINDER 0.6.0 · PREVIEW"));
     brand.append(logo, brandText);
     head.append(brand);
     const close = button("×", stop, "pt-close");
@@ -124,7 +146,7 @@
     head.append(close);
     card.append(head);
     card.append(el("p", "pt-sub",
-      "Diagnóstico de regiões na tela. Esta versão NÃO executa OCR nem traduz."));
+      "Máscaras de instâncias candidatas · OCR PT/EN sob demanda · tradução local quando disponível."));
     card.append(el("div", "pt-section", "Modo de detecção"));
     const modes = el("div", "pt-row");
     modes.append(button("Genérico", () => changeMode("generic"), "", mode === "generic"));
@@ -133,6 +155,9 @@
     const actions = el("div", "pt-row");
     actions.append(button("Selecionar imagem (manual)", startManual, "pt-primary"));
     actions.append(button("Identificar imagens (Finder)", () => autoScanner.refresh(), "pt-primary"));
+    const scanOCR = button("Localizar textos por OCR", scanVisibleTextOCR, "pt-primary");
+    scanOCR.disabled = ocrBusy;
+    actions.append(scanOCR);
     actions.append(button(autoScanner?.enabled ? "Auto ao rolar: ligado" : "Auto ao rolar: pausado",
       () => {
         if (autoScanner.enabled) {
@@ -171,6 +196,7 @@
     if (inspected !== null && items[inspected]) {
       const c = items[inspected], r = c.rect;
       const status = c.status === "REVIEW_REQUIRED" ? "REVISÃO NECESSÁRIA" :
+        c.status === "PROVISIONAL_INSTANCE" ? "Instância com máscara (provisória)" :
         c.status === "CANDIDATE" ? "Hipótese de associação" :
         c.status === "TEXT_ONLY" ? "Texto sem balão confirmado" :
         "Seleção manual: não analisada";
@@ -191,18 +217,61 @@
         "Balões candidatos à associação: " +
           (c.candidateBalloonIds?.join(", ") || "nenhum") + "\n" +
         "Grupos de texto vizinhos: " + neighbors + "\n" +
-        "Idioma do texto: não identificado (sem OCR)\n" +
-        "Tradução suportada: ainda não verificada\n" +
+        "Idioma do texto: " + (c.ocr?.language || "ainda não identificado") + "\n" +
+        "Tradução: " + (c.translation ? "disponível neste par" : "ainda não verificada") + "\n" +
+        (c.maskPixelCount ? "Máscara da instância: " + c.maskPixelCount + " pixels\n" : "") +
         "Recorte: X " + Math.round(r.x) + " · Y " + Math.round(r.y) +
           " · " + Math.round(r.width) + " × " + Math.round(r.height) + "\n" +
         (c.fit ? "Enquadramento: " + c.fit + "\n" : "") +
         (c.reason ? "Diagnóstico: " + c.reason + "\n" : "") +
         (c.risk ? "ATENÇÃO: não usar este recorte para tradução automática." :
           "Geometria candidata; validação visual ainda necessária.")));
+      const options = el("div", "pt-options");
+      function dropdown(labelText,current,values,callback) {
+        const holder=el("label","pt-field");
+        holder.append(el("span","",labelText));
+        const select=el("select","");
+        for(const [value,label] of values){
+          const option=el("option","",label);
+          option.value=value;
+          if(value===current)option.selected=true;
+          select.append(option);
+        }
+        select.addEventListener("change",()=>callback(select.value));
+        holder.append(select);
+        return holder;
+      }
+      options.append(
+        dropdown("Idioma de origem",sourcePreference,
+          [["auto","Automático"],["pt","Português"],["en","Inglês"]],
+          v=>{sourcePreference=v;chrome.storage.local.set({sourcePreference:v});}),
+        dropdown("Traduzir para",targetPreference,
+          Object.entries(Language.languages),
+          v=>{targetPreference=v;chrome.storage.local.set({targetPreference:v});})
+      );
+      card.append(options);
+      if(c.ocr?.text) {
+        card.append(el("div","pt-section","Texto reconhecido · OCR local"));
+        card.append(el("div","pt-ocr-text",c.ocr.text));
+        if(c.translation) {
+          card.append(el("div","pt-section","Tradução"));
+          card.append(el("div","pt-ocr-text",c.translation));
+        }
+        const tr=button("Traduzir localmente",()=>translateSelected(inspected),"pt-primary");
+        tr.disabled=ocrBusy || c.ocr.language==="und" && sourcePreference==="auto";
+        card.append(tr);
+      } else {
+        const read=button(ocrBusy?"Reconhecendo texto…":"Ler texto (OCR local)",
+          ()=>readSelected(inspected),"pt-primary");
+        read.disabled=ocrBusy || Boolean(c.risk);
+        card.append(read);
+      }
+      if(c.risk)card.append(el("div","pt-small",
+        "Recorte ambíguo: refine manualmente antes do OCR."));
       card.append(button("Refinar enquadramento manualmente", () => startManual(), "pt-primary"));
     }
     card.append(el("div", "pt-small",
-      "Auto após rolar, com pausa quando a página estabiliza e limite de capturas. Genérico = elementos visuais; Quadrinhos = hipóteses de fala sem OCR."));
+      "O auto-scroll permanece independente do OCR. As máscaras são estimativas geométricas; não implicam balões semanticamente confirmados."));
     shadow.append(card);
   }
 
@@ -300,6 +369,173 @@
         " × " + Math.round(rect.height) + " pixels. Clique na caixa para inspecionar.");
     });
   }
+  async function scanVisibleTextOCR() {
+    if (ocrBusy || state==="select" || mode!=="comic") return;
+    const selectedBefore=inspected;
+    const generation=++epoch;
+    autoScanner.stop(); // Explicit expensive OCR pass; never every scroll.
+    ocrBusy=true;
+    render("Capturando página visível para OCR local; auto-scroll temporariamente pausado.");
+    try {
+      if(host)host.style.visibility="hidden";
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      const shot=await chrome.runtime.sendMessage({type:"PT_FINDER_CAPTURE"});
+      if(!shot?.ok || !shot.image)throw Error(shot?.error||"Captura falhou.");
+      if(generation!==epoch)return;
+      const photo=new Image();photo.src=shot.image;await photo.decode();
+      const ratio=Math.min(1,1400/photo.naturalWidth,1400/photo.naturalHeight,
+        Math.sqrt(1800000/(photo.naturalWidth*photo.naturalHeight)));
+      const canvas=document.createElement("canvas");
+      canvas.width=Math.max(1,Math.floor(photo.naturalWidth*ratio));
+      canvas.height=Math.max(1,Math.floor(photo.naturalHeight*ratio));
+      const ctx=canvas.getContext("2d");
+      if(!ctx)throw Error("Canvas indisponível.");
+      ctx.drawImage(photo,0,0,canvas.width,canvas.height);
+      const width=canvas.width,height=canvas.height;
+      const encoded=canvas.toDataURL("image/jpeg",.84);
+      canvas.width=canvas.height=0;photo.src="";
+      if(host)host.style.visibility="visible";
+      render("Lendo português e inglês em todo o conteúdo visível. Aguarde…");
+      const output=await chrome.runtime.sendMessage({
+        type:"PT_FINDER_OCR",image:encoded,language:"por+eng"
+      });
+      if(!output?.ok)throw Error(output?.error||"OCR não respondeu.");
+      if(generation!==epoch)return;
+      const candidates=OCRRegions.groupLinesConservative(output.lines||[],24);
+      let added=0,updated=0;
+      function overlap(a,b){
+        const w=Math.max(0,Math.min(a.x+a.width,b.x+b.width)-Math.max(a.x,b.x));
+        const h=Math.max(0,Math.min(a.y+a.height,b.y+b.height)-Math.max(a.y,b.y));
+        return w*h;
+      }
+      for(const region of candidates){
+        const b=region.bbox;
+        const scaled={x:b.x0*innerWidth/width,y:b.y0*innerHeight/height,
+          width:(b.x1-b.x0)*innerWidth/width,
+          height:(b.y1-b.y0)*innerHeight/height};
+        if(scaled.width<12||scaled.height<7||scaled.width>innerWidth*.9)continue;
+        const match=items.find(i=>i.inkRect&&overlap(i.inkRect,scaled)/
+          Math.min(i.inkRect.width*i.inkRect.height,scaled.width*scaled.height)>.48);
+        const language=Language.lexical(region.text).language;
+        const ocr={text:region.text,confidence:region.confidence,language,
+          languageMethod:"lexicon-heuristic"};
+        if(match){
+          if(!match.ocr?.text){match.ocr=ocr;updated++;}
+          continue;
+        }
+        const margin=6;
+        items.push({
+          kind:"text-region-candidate",label:"Texto encontrado por OCR (balão não confirmado)",
+          status:"TEXT_ONLY",textGroupId:"ocr-text-"+(added+1),
+          inkRect:scaled,rect:{
+            x:Math.max(0,scaled.x-margin),y:Math.max(0,scaled.y-margin),
+            width:Math.min(innerWidth-scaled.x+margin,scaled.width+margin*2),
+            height:Math.min(innerHeight-scaled.y+margin,scaled.height+margin*2)
+          },ocr,balloonId:null,detectedLanguage:language,translationSupported:null,
+          reason:"OCR_TEXT_WITHOUT_CONFIRMED_BALLOON",risk:false
+        });
+        added++;
+        if(added>=24)break;
+      }
+      inspected=selectedBefore;
+      render("OCR local concluído: "+updated+" candidato(s) completado(s), "+added+
+        " região(ões) textual(is) adicional(is). Estas regiões NÃO são balões confirmados.");
+    }catch(error){
+      if(generation===epoch)render("Varredura OCR indisponível: "+String(error.message||error));
+    }finally{
+      if(host)host.style.visibility="visible";
+      ocrBusy=false;
+      if(generation===epoch&&state!=="closed")render(lastStatus);
+    }
+  }
+  async function readSelected(index) {
+    const c=items[index];
+    if(!c || ocrBusy || c.risk || !c.rect) return;
+    ocrBusy=true;
+    autoScanner.stop(); // Keep the chosen text while OCR is running.
+    const currentEpoch=++epoch;
+    const previousIndex=inspected;
+    render("Preparando recorte local: o OCR só recebe a região escolhida.");
+    try {
+      if(host)host.style.visibility="hidden";
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      const capture=await chrome.runtime.sendMessage({type:"PT_FINDER_CAPTURE"});
+      if(!capture?.ok || !capture.image)throw Error(capture?.error||"Captura não disponível.");
+      if(currentEpoch!==epoch) return;
+      const photo=new Image();
+      photo.src=capture.image;await photo.decode();
+      const ratioX=photo.naturalWidth/innerWidth,ratioY=photo.naturalHeight/innerHeight;
+      const r=c.rect;
+      const sx=Math.max(0,Math.floor(r.x*ratioX)),sy=Math.max(0,Math.floor(r.y*ratioY));
+      const sw=Math.min(photo.naturalWidth-sx,Math.ceil(r.width*ratioX));
+      const sh=Math.min(photo.naturalHeight-sy,Math.ceil(r.height*ratioY));
+      if(sw<12||sh<12)throw Error("Recorte fora dos limites da captura.");
+      const zoom=Math.min(2,1200/sw,1200/sh);
+      const cvs=document.createElement("canvas");
+      cvs.width=Math.max(1,Math.round(sw*zoom));
+      cvs.height=Math.max(1,Math.round(sh*zoom));
+      const ctx=cvs.getContext("2d",{willReadFrequently:true});
+      if(!ctx)throw Error("Canvas OCR indisponível.");
+      ctx.fillStyle="#fff";ctx.fillRect(0,0,cvs.width,cvs.height);
+      if(c.maskPolygon?.length>3){
+        ctx.save();ctx.beginPath();
+        c.maskPolygon.forEach(([x,y],i)=>{
+          const px=(x-r.x)*ratioX*zoom,py=(y-r.y)*ratioY*zoom;
+          if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
+        });
+        ctx.closePath();ctx.clip();
+      }
+      ctx.drawImage(photo,sx,sy,sw,sh,0,0,cvs.width,cvs.height);
+      if(c.maskPolygon?.length>3)ctx.restore();
+      const encoded=cvs.toDataURL("image/png");
+      cvs.width=cvs.height=0;photo.src="";
+      if(encoded.length>5_500_000)throw Error("Recorte grande demais: refine manualmente.");
+      if(host)host.style.visibility="visible";
+      const language=sourcePreference==="pt"?"por":
+        sourcePreference==="en"?"eng":"por+eng";
+      render("Executando OCR local de " + (language==="por+eng"?"português e inglês":language) + "…");
+      const result=await chrome.runtime.sendMessage({type:"PT_FINDER_OCR",image:encoded,language});
+      if(!result?.ok)throw Error(result?.error||"OCR não respondeu.");
+      if(!result.text?.trim())throw Error("Nenhuma palavra identificada. Refine o recorte.");
+      const detection=await Language.detect(result.text,sourcePreference);
+      if(currentEpoch!==epoch || !items.includes(c))return;
+      c.ocr={text:result.text,confidence:result.confidence,
+        language:detection.language,languageMethod:detection.method};
+      c.translation=null;
+      inspected=previousIndex;
+      render("OCR local concluído. Origem: " + detection.language +
+        ". Verifique a transcrição antes de traduzir.");
+    }catch(error){
+      if(currentEpoch===epoch)render("OCR indisponível: " + String(error.message||error));
+    }finally{
+      if(host)host.style.visibility="visible";
+      ocrBusy=false;
+      if(currentEpoch===epoch && state!=="closed")render(lastStatus);
+    }
+  }
+  async function translateSelected(index) {
+    const c=items[index];
+    if(!c?.ocr?.text||ocrBusy)return;
+    const source=sourcePreference==="auto"?c.ocr.language:sourcePreference;
+    const target=targetPreference;
+    if(source==="und"||!source) {
+      render("Idioma desconhecido: selecione manualmente Português ou Inglês.");return;
+    }
+    // Invoke immediately from click so model download retains browser user gesture.
+    let translation;
+    try{translation=Language.startTranslation(c.ocr.text,source,target);}
+    catch(error){render("Tradução indisponível: "+String(error.message||error));return;}
+    ocrBusy=true;
+    render("Traduzindo localmente " + source.toUpperCase() + " → " + target.toUpperCase() +
+      " (pode requerer download do pacote de idiomas)…");
+    try{
+      const result=await translation;
+      if(!items.includes(c))return;
+      c.translation=result;
+      render("Tradução concluída. Confira o texto original ao lado da tradução.");
+    }catch(error){render("Par indisponível ou download falhou: "+String(error.message||error));}
+    finally{ocrBusy=false;if(state!=="closed")render(lastStatus);}
+  }
   function cancelManual(message = "Seleção cancelada: regiões anteriores restauradas.") {
     if (state !== "select") return;
     if (manualRestore) {
@@ -363,6 +599,7 @@
       }));
       const shapes = Core.findLightRegions(data, allowed, { limit: 20 });
       const inkCandidates = TextDetector.findTextCandidates(data, allowed, { limit: 12 });
+      const instances = Instances.buildInstances(data, shapes, inkCandidates);
       const balloons = BalloonFit.refineSpeechRegions(data, inkCandidates, { limit: 12 });
       if (thisScan !== epoch) return;
       const mapped = balloons.map((c) => {
@@ -390,16 +627,42 @@
       const safeCandidates = Core.markMixedInkRegions(mapped).map((c) => ({
         ...c, risk: c.risk || c.fitRisk
       }));
-      const assigned = Association.associate(shapes, safeCandidates).map(c => ({
+      // Both inputs must share viewport coordinates: old v0.5 passed downscaled
+      // shape boxes against CSS-pixel text boxes and lost valid associations.
+      const viewportShapes = shapes.map(shape => ({...shape,rect:{
+        x:shape.rect.x/scaleX,y:shape.rect.y/scaleY,
+        width:shape.rect.width/scaleX,height:shape.rect.height/scaleY
+      }}));
+      const assigned = Association.associate(viewportShapes, safeCandidates).map((c,i) => {
+        const instance=instances[i];
+        return {
         ...c,
+        ...(instance ? {
+          instanceId:instance.id,
+          maskPixelCount:instance.maskPixelCount,
+          maskPolygon:instance.maskPolygon.map(([x,y])=>[x/scaleX,y/scaleY]),
+          splitFromConnectedShape:instance.splitFromConnectedShape,
+          balloonId:instance.id,
+          // Old bbox contamination can be eliminated by an isolated mask.
+          // Never suppress genuine ink overlap or two competing shapes.
+          status:(instance.risk || ["INK_OVERLAP","MULTIPLE_BALLOON_CANDIDATES"].includes(c.reason))
+            ?"REVIEW_REQUIRED":"PROVISIONAL_INSTANCE",
+          risk:Boolean(instance.risk ||
+            ["INK_OVERLAP","MULTIPLE_BALLOON_CANDIDATES"].includes(c.reason)),
+          reason:instance.splitFromConnectedShape && !instance.risk &&
+            !["INK_OVERLAP","MULTIPLE_BALLOON_CANDIDATES"].includes(c.reason)
+              ?"SEPARATED_BY_SEEDED_MASK":c.reason,
+          rect:{x:instance.bbox.x/scaleX,y:instance.bbox.y/scaleY,
+            width:instance.bbox.width/scaleX,height:instance.bbox.height/scaleY}
+        }:{}),
         label: c.status === "REVIEW_REQUIRED" ? "Região com associação ambígua" :
           c.balloonHypothesis === "rounded" ? "Possível balão arredondado com texto" :
           c.balloonHypothesis === "caption" ? "Possível caixa narrativa com texto" :
           "Texto em região visual ainda não classificada"
-      }));
+      }; });
       items = [...items, ...assigned].slice(0, 28);
       lastMs = Math.round(performance.now() - start);
-      render("Finder Quadrinhos: falas candidatas isoladas. Atualização automática durante a leitura. Vermelho = revisão necessária. Sem OCR.");
+      render("Finder Quadrinhos: falas candidatas isoladas. Atualização automática durante a leitura. Vermelho = revisão necessária. Clique na caixa para OCR local sob demanda.");
     } catch (e) {
       if (thisScan !== epoch) return;
       lastMs = Math.round(performance.now() - start);
@@ -453,8 +716,10 @@
     autoScanner.visibilityChanged();
   });
   // Read the preference from extension storage (not the comic website's storage).
-  chrome.storage.local.get({ finderShortcut: Shortcut.DEFAULT }).then(settings => {
+  chrome.storage.local.get({ finderShortcut: Shortcut.DEFAULT, sourcePreference:"auto", targetPreference:"en" }).then(settings => {
     if (Shortcut.valid(settings.finderShortcut)) shortcut = settings.finderShortcut;
+    if (["auto","pt","en"].includes(settings.sourcePreference)) sourcePreference=settings.sourcePreference;
+    if (Language.languages[settings.targetPreference]) targetPreference=settings.targetPreference;
     if (state !== "closed" && state !== "select" && !recordingShortcut) render();
   }).catch(error => console.warn("PageTranslator: atalho padrão preservado.", error));
 
