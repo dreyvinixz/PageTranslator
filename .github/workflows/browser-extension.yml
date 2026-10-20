@@ -23,6 +23,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Validate PDF QA Python script (without distributing any comic pages)
+        run: python -m py_compile tools/qa_pdf.py
       - name: Install local-only OCR dependencies
         working-directory: browser-extension
         run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
