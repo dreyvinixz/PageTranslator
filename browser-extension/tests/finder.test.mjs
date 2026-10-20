@@ -104,7 +104,7 @@ test("Finder preview avoids OCR and remote translation", () => {
   assert.match(content, /Genérico/);
   assert.match(content, /Quadrinhos/);
   assert.doesNotMatch(background + content, /Tesseract|PT_RECOGNIZE|PT_TRANSLATE_REMOTE|mymemory/i);
-  assert.deepEqual(manifest.permissions, ["activeTab", "scripting"]);
+  assert.deepEqual(manifest.permissions, ["activeTab", "scripting", "storage"]);
 });
 
 test("letter strokes on a bright caption yield one text-bearing region", () => {
