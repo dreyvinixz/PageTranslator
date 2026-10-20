@@ -544,7 +544,13 @@
       const safeCandidates = Core.markMixedInkRegions(mapped).map((c) => ({
         ...c, risk: c.risk || c.fitRisk
       }));
-      const assigned = Association.associate(shapes, safeCandidates).map((c,i) => {
+      // Both inputs must share viewport coordinates: old v0.5 passed downscaled
+      // shape boxes against CSS-pixel text boxes and lost valid associations.
+      const viewportShapes = shapes.map(shape => ({...shape,rect:{
+        x:shape.rect.x/scaleX,y:shape.rect.y/scaleY,
+        width:shape.rect.width/scaleX,height:shape.rect.height/scaleY
+      }}));
+      const assigned = Association.associate(viewportShapes, safeCandidates).map((c,i) => {
         const instance=instances[i];
         return {
         ...c,
