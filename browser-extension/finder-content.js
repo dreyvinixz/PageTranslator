@@ -170,17 +170,36 @@
     card.append(el("div", "pt-status", message));
     if (inspected !== null && items[inspected]) {
       const c = items[inspected], r = c.rect;
+      const status = c.status === "REVIEW_REQUIRED" ? "REVISÃO NECESSÁRIA" :
+        c.status === "CANDIDATE" ? "Hipótese de associação" :
+        c.status === "TEXT_ONLY" ? "Texto sem balão confirmado" :
+        "Seleção manual: não analisada";
+      const shape = c.balloonHypothesis === "rounded" ? "Possível balão arredondado" :
+        c.balloonHypothesis === "caption" ? "Possível caixa narrativa" :
+        c.balloonId ? "Forma indeterminada" : "Não confirmado";
+      const neighbors = c.nearbyTextGroupIds?.length
+        ? c.nearbyTextGroupIds.join(", ") : "Nenhum grupo próximo reconhecido";
       card.append(el("div", "pt-details",
-        "#" + (inspected + 1) + " · " + c.label + "\n" +
-        "X: " + Math.round(r.x) + " · Y: " + Math.round(r.y) + "\n" +
-        "Largura: " + Math.round(r.width) + " · Altura: " + Math.round(r.height) +
-        (c.score === undefined ? "" : "\nÍndice heurístico (não probabilidade): " + Math.round(c.score * 100) + "%") +
-        (c.lineCount ? "\nGrupo isolado: " + c.lineCount + " linha(s) de texto." : "") +
-        (c.fit ? "\nEnquadramento: " + (c.fit === "balloon-margin"
-          ? "expandido até a margem visual provável" : c.fit === "review"
-          ? "revisão manual necessária" : "justo ao texto (seguro)") : "") +
-        (c.risk ? "\nATENÇÃO: sobreposição de regiões de tinta. Possível mistura." : "") +
-        "\nAs bordas podem se sobrepor; o conteúdo precisa permanecer independente."));
+        "#" + (inspected + 1) + " · " + c.label + "\\n" +
+        "Status: " + status + "\\n" +
+        "É balão? " + shape + "\\n" +
+        "Possui texto? " + (c.textGroupId
+          ? "Traços semelhantes a letras (" + (c.lineCount || "?") +
+            " linhas); OCR pendente" : "Não avaliado") + "\\n" +
+        "O texto pertence ao balão? " +
+          (c.balloonId ? c.balloonId + " (hipótese)" : "Sem atribuição segura") + "\\n" +
+        "Balões candidatos à associação: " +
+          (c.candidateBalloonIds?.join(", ") || "nenhum") + "\\n" +
+        "Grupos de texto vizinhos: " + neighbors + "\\n" +
+        "Idioma do texto: não identificado (sem OCR)\\n" +
+        "Tradução suportada: ainda não verificada\\n" +
+        "Recorte: X " + Math.round(r.x) + " · Y " + Math.round(r.y) +
+          " · " + Math.round(r.width) + " × " + Math.round(r.height) + "\\n" +
+        (c.fit ? "Enquadramento: " + c.fit + "\\n" : "") +
+        (c.reason ? "Diagnóstico: " + c.reason + "\\n" : "") +
+        (c.risk ? "ATENÇÃO: não usar este recorte para tradução automática." :
+          "Geometria candidata; validação visual ainda necessária.")));
+      card.append(button("Refinar enquadramento manualmente", () => startManual(), "pt-primary"));
     }
     card.append(el("div", "pt-small",
       "Auto após rolar, com pausa quando a página estabiliza e limite de capturas. Genérico = elementos visuais; Quadrinhos = hipóteses de fala sem OCR."));
@@ -224,6 +243,7 @@
   }
   function startManual() {
     autoScanner.stop(); // Manual markup must remain until the user resumes Finder.
+    manualRestore = { items: items.slice(), inspected };
     epoch++;
     state = "select";
     items = [];
@@ -257,13 +277,13 @@
       preview.hidden = false;
     });
     surface.addEventListener("pointermove", (ev) => { if (anchor) bounds(ev); });
-    surface.addEventListener("pointercancel", () => render("Seleção cancelada."));
+    surface.addEventListener("pointercancel", () => cancelManual());
     surface.addEventListener("pointerup", (ev) => {
       if (!anchor) return;
       const rect = bounds(ev);
       anchor = null;
       if (rect.width < 20 || rect.height < 20) {
-        render("Selecione uma região de pelo menos 20 × 20 pixels.");
+        cancelManual("Seleção insuficiente. Repita com pelo menos 20 × 20 pixels.");
         return;
       }
       const matching = collectImages().filter((item) =>
@@ -274,10 +294,20 @@
         rect
       }];
       inspected = 0;
+      manualRestore = null;
       lastMs = 0;
       render("Seleção marcada sem OCR: " + Math.round(rect.width) +
         " × " + Math.round(rect.height) + " pixels. Clique na caixa para inspecionar.");
     });
+  }
+  function cancelManual(message = "Seleção cancelada: regiões anteriores restauradas.") {
+    if (state !== "select") return;
+    if (manualRestore) {
+      items = manualRestore.items;
+      inspected = manualRestore.inspected;
+    }
+    manualRestore = null;
+    render(message);
   }
   async function startFinder() {
     const thisScan = ++epoch;
