@@ -11,7 +11,7 @@ assert.deepEqual(manifest.permissions, ["activeTab", "scripting", "storage", "of
 assert.equal(manifest.host_permissions, undefined);
 assert.equal(manifest.content_scripts, undefined);
 const files = readdirSync(dist).sort();
-assert.deepEqual(files, ["assets", "background.js", "finder-association.js", "finder-auto.js", "finder-content.js", "finder-core.js", "finder-fit.js", "finder-instances.js", "finder-language.js", "finder-offscreen.html", "finder-offscreen.js", "finder-shortcut.js", "finder-text.js", "manifest.json"]);
+assert.deepEqual(files, ["assets", "background.js", "finder-association.js", "finder-auto.js", "finder-content.js", "finder-core.js", "finder-fit.js", "finder-instances.js", "finder-language.js", "finder-offscreen.html", "finder-offscreen.js", "finder-shortcut.js", "finder-text.js", "manifest.json", "vendor"]);
 assert.deepEqual(readdirSync(join(dist, "assets")), ["logo.svg"]);
 assert.deepEqual(manifest.web_accessible_resources[0].resources, ["assets/logo.svg"]);
 for(const path of ["vendor/tesseract.min.js","vendor/worker.min.js",
