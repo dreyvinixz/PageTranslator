@@ -401,7 +401,7 @@
       });
       if(!output?.ok)throw Error(output?.error||"OCR não respondeu.");
       if(generation!==epoch)return;
-      const candidates=OCRRegions.groupLines(output.lines||[],24);
+      const candidates=OCRRegions.groupLinesConservative(output.lines||[],24);
       let added=0,updated=0;
       function overlap(a,b){
         const w=Math.max(0,Math.min(a.x+a.width,b.x+b.width)-Math.max(a.x,b.x));
