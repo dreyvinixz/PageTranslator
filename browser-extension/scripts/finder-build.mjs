@@ -5,7 +5,7 @@ const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const dist = join(root, "dist");
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
-for (const name of ["manifest.json", "background.js", "finder-core.js", "finder-text.js", "finder-fit.js", "finder-association.js", "finder-instances.js", "finder-language.js", "finder-shortcut.js", "finder-auto.js", "regions.js", "finder-content.js", "finder-offscreen.js", "finder-offscreen.html"]) {
+for (const name of ["manifest.json", "background.js", "finder-core.js", "finder-panels.js", "finder-ocr-runtime.js", "finder-text.js", "finder-fit.js", "finder-association.js", "finder-instances.js", "finder-language.js", "finder-shortcut.js", "finder-auto.js", "regions.js", "finder-content.js", "finder-offscreen.js", "finder-offscreen.html"]) {
   copyFileSync(join(root, name), join(dist, name));
 }
 mkdirSync(join(dist, "assets"), { recursive: true });
@@ -25,4 +25,4 @@ for(const language of ["por","eng"]) {
   copyFileSync(deps("@tesseract.js-data",language,"4.0.0_best_int",language+".traineddata.gz"),
     join(vendor,"lang",language+".traineddata.gz"));
 }
-console.log("Finder v0.6.0 OCR local criado em "+dist);
+console.log("Finder v0.7.1 OCR/visão criado em "+dist);

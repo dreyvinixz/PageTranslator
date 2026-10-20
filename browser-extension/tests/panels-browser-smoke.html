@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>PageTranslator panel smoke</title>
+<script src="../finder-panels.js"></script>
+<output id="result">PENDING</output>
+<script>
+"use strict";
+// Browser-real smoke, synthetic art only; never redistribute comic pages.
+const c=document.createElement("canvas");c.width=360;c.height=240;
+const ctx=c.getContext("2d",{willReadFrequently:true});
+ctx.fillStyle="#8b617a";ctx.fillRect(0,0,c.width,c.height);
+ctx.fillStyle="#141418";
+ctx.fillRect(110,0,9,240);ctx.fillRect(233,0,10,240);
+ctx.fillStyle="#f8f7f2";
+ctx.fillRect(20,35,70,30);ctx.fillRect(153,58,58,30);ctx.fillRect(280,32,55,30);
+const image=ctx.getImageData(0,0,c.width,c.height);
+const panels=PageTranslatorPanels.findPanels(image,
+ [{x:0,y:0,width:360,height:240}]);
+const valid=panels.length===3 &&
+ panels[0].rect.x+panels[0].rect.width<=110 &&
+ panels[1].rect.x>=119 &&
+ panels[2].rect.x>=243 &&
+ panels.every(p=>p.rect.width>55);
+document.getElementById("result").textContent=valid?"PASS_BROWSER_PANELS":"FAIL_BROWSER_PANELS="+JSON.stringify(panels);
+</script>
+</html>
