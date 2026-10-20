@@ -5,11 +5,13 @@
   const Core = globalThis.PageTranslatorFinderCore;
   const TextDetector = globalThis.PageTranslatorTextCandidates;
   const BalloonFit = globalThis.PageTranslatorBalloonFit;
-  if (!Core || !TextDetector || !BalloonFit) throw new Error("PageTranslator: módulos de detecção não foram carregados.");
+  const AutoScan = globalThis.PageTranslatorAutoScanner;
+  if (!Core || !TextDetector || !BalloonFit || !AutoScan) throw new Error("PageTranslator: módulos de detecção não foram carregados.");
 
   let host = null, root = null, mode = "comic", state = "closed", epoch = 0;
   let items = [], inspected = null, lastMs = 0, lastStatus = "Pronto para identificar imagens.";
-  let restoring = null;
+  // Scanner is event-driven (scroll/image/resize), not a background polling loop.
+  let autoScanner = null;
 
   const css = [
     ":host{all:initial;position:fixed;inset:0;z-index:2147483646;font:13px/1.45 system-ui,sans-serif;pointer-events:none;color:#f6fbff}",
@@ -62,6 +64,7 @@
     return shadow;
   }
   function stop() {
+    autoScanner?.stop();
     epoch++;
     state = "closed";
     if (host) host.remove();
@@ -98,7 +101,7 @@
     }
     const card = el("section", "pt-menu");
     const head = el("div", "pt-head");
-    head.append(el("span", "", "PageTranslator · Finder 0.3.3"));
+    head.append(el("span", "", "PageTranslator · Finder 0.4.0"));
     head.append(button("×", stop, "pt-close"));
     card.append(head);
     card.append(el("p", "pt-sub",
@@ -110,7 +113,18 @@
     card.append(modes);
     const actions = el("div", "pt-row");
     actions.append(button("Selecionar imagem (manual)", startManual, "pt-primary"));
-    actions.append(button("Identificar imagens (Finder)", startFinder, "pt-primary"));
+    actions.append(button("Identificar imagens (Finder)", () => autoScanner.refresh(), "pt-primary"));
+    actions.append(button(autoScanner?.enabled ? "Auto ao rolar: ligado" : "Auto ao rolar: pausado",
+      () => {
+        if (autoScanner.enabled) {
+          autoScanner.stop();
+          epoch++; // Drop any in-flight result when stopping.
+          render("Varredura automática pausada. Clique Finder para reativar.");
+        } else {
+          autoScanner.start();
+          render("Varredura ativada: detectando agora e após cada rolagem.");
+        }
+      }, "", autoScanner?.enabled));
     card.append(actions);
     if (items.length) {
       const images = items.filter((c) => !["balloon-candidate", "text-region-candidate"].includes(c.kind)).length;
@@ -141,7 +155,7 @@
         "\nAs bordas podem se sobrepor; o conteúdo precisa permanecer independente."));
     }
     card.append(el("div", "pt-small",
-      "Genérico: elementos visuais. Quadrinhos: agrupa linhas de texto separadamente para reduzir mistura. Amarelo = recorte sugerido, sem OCR."));
+      "Auto após rolar, com pausa quando a página estabiliza e limite de capturas. Genérico = elementos visuais; Quadrinhos = hipóteses de fala sem OCR."));
     shadow.append(card);
   }
 
@@ -153,6 +167,7 @@
     render(value === "generic"
       ? "Modo Genérico selecionado. Identificação por elementos da página."
       : "Modo Quadrinhos selecionado. Finder buscará imagens e possíveis balões.");
+    if (autoScanner.enabled) autoScanner.request("mode", 150);
   }
 
   function pageRect(node) {
@@ -180,6 +195,7 @@
     return Core.dedupe(candidates, 18);
   }
   function startManual() {
+    autoScanner.stop(); // Manual markup must remain until the user resumes Finder.
     epoch++;
     state = "select";
     items = [];
@@ -253,7 +269,7 @@
       render("Nenhuma imagem visível detectada. Use Selecionar imagem (manual).");
       return;
     }
-    // A captured screenshot is requested only once per explicit click; never during scroll.
+    // Captures follow explicit Finder activation and debounced scrolling only; no polling.
     try {
       const currentHost = host;
       if (currentHost) currentHost.style.visibility = "hidden";
@@ -317,7 +333,7 @@
         ...c, risk: c.risk || c.fitRisk
       }))].slice(0, 28);
       lastMs = Math.round(performance.now() - start);
-      render("Finder Quadrinhos: margens estimadas visualmente e falas mantidas isoladas. Vermelho = possível mistura ou enquadramento incerto. Sem OCR.");
+      render("Finder Quadrinhos: falas candidatas isoladas. Atualização automática durante a leitura. Vermelho = revisão necessária. Sem OCR.");
     } catch (e) {
       if (thisScan !== epoch) return;
       lastMs = Math.round(performance.now() - start);
@@ -327,21 +343,48 @@
     }
   }
 
-  window.addEventListener("scroll", () => {
-    if (state !== "closed" && state !== "select" && state !== "scanning" && items.length) {
-      epoch++;
-      items = [];
-      inspected = null;
-      render("Página rolou. Caixas removidas para evitar posições erradas. Clique Finder novamente.");
+  // DOM handling remains separate from scheduling so scroll bursts cannot
+  // create concurrent screenshots or keep stale rectangles at wrong positions.
+  function invalidateViewport(reason) {
+    if (state === "closed" || state === "select") return;
+    ++epoch;
+    const hadRegions = items.length > 0 || inspected !== null;
+    items = [];
+    inspected = null;
+    if (hadRegions || (autoScanner?.busy && !lastStatus.startsWith("Conteúdo mudou"))) {
+      render(reason === "hidden" ? "Aba em segundo plano: leitura suspensa." :
+        "Conteúdo mudou; aguardando a rolagem terminar para identificar novamente…");
     }
+  }
+  autoScanner = AutoScan.createAutoScanner({
+    scan: () => startFinder(),
+    isVisible: () => document.visibilityState === "visible" &&
+      state !== "closed" && state !== "select",
+    invalidate: invalidateViewport,
+    onError: (error) => {
+      ++epoch;
+      render("Scanner pausado após falha: " + String(error.message || error) +
+        ". Clique Finder para tentar novamente.");
+    }
+  }, { idleMs: 1000, gapMs: 4000 });
+
+  window.addEventListener("scroll", (event) => {
+    if (host && event.composedPath?.().includes(host)) return;
+    if (state === "closed" || state === "select") return;
+    if (autoScanner.enabled) autoScanner.request("scroll", 1000);
+    else invalidateViewport("scroll");
   }, true);
   window.addEventListener("resize", () => {
-    if (state !== "closed" && state !== "select") {
-      epoch++;
-      items = [];
-      inspected = null;
-      render("Tamanho da página mudou. Clique Finder para atualizar.");
-    }
+    if (state === "closed" || state === "select") return;
+    if (autoScanner.enabled) autoScanner.request("resize", 1100);
+    else invalidateViewport("resize");
+  }, true);
+  document.addEventListener("load", (event) => {
+    if (event.target instanceof HTMLImageElement && autoScanner.enabled &&
+        state !== "select") autoScanner.request("image", 1300);
+  }, true);
+  document.addEventListener("visibilitychange", () => {
+    autoScanner.visibilityChanged();
   });
   window.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && state === "select") render("Seleção cancelada.");
@@ -351,7 +394,8 @@
     if (message?.type === "PT_FINDER_OPEN") {
       epoch++;
       ensure();
-      render("Escolha Genérico ou Quadrinhos; depois Seleção manual ou Finder.");
+      autoScanner.start();
+      render("Finder automático ativo. Escolha Genérico ou Quadrinhos; a leitura atualiza quando você rolar.");
       respond({ ok: true });
     }
   });

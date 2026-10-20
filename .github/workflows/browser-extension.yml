@@ -35,19 +35,20 @@ jobs:
           node --check finder-core.js
           node --check finder-text.js
           node --check finder-fit.js
+          node --check finder-auto.js
           node --check finder-content.js
       - name: Create preview ZIP
         shell: bash
         run: |
           set -euo pipefail
           cd browser-extension/dist
-          zip -q -r "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.3.3-preview.zip" .
-          test -f "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.3.3-preview.zip"
-          unzip -t "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.3.3-preview.zip" >/dev/null
+          zip -q -r "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.4.0-preview.zip" .
+          test -f "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.4.0-preview.zip"
+          unzip -t "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.4.0-preview.zip" >/dev/null
       - name: Upload Finder preview
         uses: actions/upload-artifact@v4
         with:
-          name: PageTranslator-Finder-v0.3.3-preview
-          path: PageTranslator-Finder-v0.3.3-preview.zip
+          name: PageTranslator-Finder-v0.4.0-preview
+          path: PageTranslator-Finder-v0.4.0-preview.zip
           if-no-files-found: error
           retention-days: 30
