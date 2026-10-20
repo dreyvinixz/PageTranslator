@@ -180,23 +180,23 @@
       const neighbors = c.nearbyTextGroupIds?.length
         ? c.nearbyTextGroupIds.join(", ") : "Nenhum grupo próximo reconhecido";
       card.append(el("div", "pt-details",
-        "#" + (inspected + 1) + " · " + c.label + "\\n" +
-        "Status: " + status + "\\n" +
-        "É balão? " + shape + "\\n" +
+        "#" + (inspected + 1) + " · " + c.label + "\n" +
+        "Status: " + status + "\n" +
+        "É balão? " + shape + "\n" +
         "Possui texto? " + (c.textGroupId
           ? "Traços semelhantes a letras (" + (c.lineCount || "?") +
-            " linhas); OCR pendente" : "Não avaliado") + "\\n" +
+            " linhas); OCR pendente" : "Não avaliado") + "\n" +
         "O texto pertence ao balão? " +
-          (c.balloonId ? c.balloonId + " (hipótese)" : "Sem atribuição segura") + "\\n" +
+          (c.balloonId ? c.balloonId + " (hipótese)" : "Sem atribuição segura") + "\n" +
         "Balões candidatos à associação: " +
-          (c.candidateBalloonIds?.join(", ") || "nenhum") + "\\n" +
-        "Grupos de texto vizinhos: " + neighbors + "\\n" +
-        "Idioma do texto: não identificado (sem OCR)\\n" +
-        "Tradução suportada: ainda não verificada\\n" +
+          (c.candidateBalloonIds?.join(", ") || "nenhum") + "\n" +
+        "Grupos de texto vizinhos: " + neighbors + "\n" +
+        "Idioma do texto: não identificado (sem OCR)\n" +
+        "Tradução suportada: ainda não verificada\n" +
         "Recorte: X " + Math.round(r.x) + " · Y " + Math.round(r.y) +
-          " · " + Math.round(r.width) + " × " + Math.round(r.height) + "\\n" +
-        (c.fit ? "Enquadramento: " + c.fit + "\\n" : "") +
-        (c.reason ? "Diagnóstico: " + c.reason + "\\n" : "") +
+          " · " + Math.round(r.width) + " × " + Math.round(r.height) + "\n" +
+        (c.fit ? "Enquadramento: " + c.fit + "\n" : "") +
+        (c.reason ? "Diagnóstico: " + c.reason + "\n" : "") +
         (c.risk ? "ATENÇÃO: não usar este recorte para tradução automática." :
           "Geometria candidata; validação visual ainda necessária.")));
       card.append(button("Refinar enquadramento manualmente", () => startManual(), "pt-primary"));
@@ -387,9 +387,17 @@
         } : undefined
       }; });
       // Rectangular label overlap is okay; collision of unpadded ink is not.
-      items = [...items, ...Core.markMixedInkRegions(mapped).map((c) => ({
+      const safeCandidates = Core.markMixedInkRegions(mapped).map((c) => ({
         ...c, risk: c.risk || c.fitRisk
-      }))].slice(0, 28);
+      }));
+      const assigned = Association.associate(shapes, safeCandidates).map(c => ({
+        ...c,
+        label: c.status === "REVIEW_REQUIRED" ? "Região com associação ambígua" :
+          c.balloonHypothesis === "rounded" ? "Possível balão arredondado com texto" :
+          c.balloonHypothesis === "caption" ? "Possível caixa narrativa com texto" :
+          "Texto em região visual ainda não classificada"
+      }));
+      items = [...items, ...assigned].slice(0, 28);
       lastMs = Math.round(performance.now() - start);
       render("Finder Quadrinhos: falas candidatas isoladas. Atualização automática durante a leitura. Vermelho = revisão necessária. Sem OCR.");
     } catch (e) {
@@ -444,8 +452,46 @@
   document.addEventListener("visibilitychange", () => {
     autoScanner.visibilityChanged();
   });
+  // Read the preference from extension storage (not the comic website's storage).
+  chrome.storage.local.get({ finderShortcut: Shortcut.DEFAULT }).then(settings => {
+    if (Shortcut.valid(settings.finderShortcut)) shortcut = settings.finderShortcut;
+    if (state !== "closed" && state !== "select" && !recordingShortcut) render();
+  }).catch(error => console.warn("PageTranslator: atalho padrão preservado.", error));
+
   window.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape" && state === "select") render("Seleção cancelada.");
+    if (recordingShortcut) {
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        recordingShortcut = false;
+        render("Alteração de atalho cancelada.");
+        return;
+      }
+      const next = Shortcut.shortcutFromEvent(ev);
+      if (next && Shortcut.valid(next)) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        recordingShortcut = false;
+        shortcut = next;
+        chrome.storage.local.set({ finderShortcut: shortcut }).catch(error =>
+          console.warn("PageTranslator: falha ao persistir atalho.", error));
+        render("Atalho definido: " + shortcut + ". Ele funciona nesta página após ativar a extensão.");
+      }
+      return;
+    }
+    if (ev.key === "Escape" && state === "select") {
+      ev.preventDefault();
+      cancelManual();
+      return;
+    }
+    if (ev.repeat || Shortcut.editable(ev.target)) return;
+    if (Shortcut.shortcutFromEvent(ev) !== shortcut) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (state === "closed") {
+      ensure();
+      autoScanner.start();
+      render("Finder reativado pelo atalho " + shortcut + ".");
+    } else stop();
   }, true);
 
   chrome.runtime.onMessage.addListener((message, _sender, respond) => {
@@ -453,7 +499,7 @@
       epoch++;
       ensure();
       autoScanner.start();
-      render("Finder automático ativo. Escolha Genérico ou Quadrinhos; a leitura atualiza quando você rolar.");
+      render("Finder automático ativo. Atalho: " + shortcut + ". A leitura atualiza quando você rolar.");
       respond({ ok: true });
     }
   });
