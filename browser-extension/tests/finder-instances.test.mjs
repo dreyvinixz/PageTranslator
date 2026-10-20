@@ -19,7 +19,7 @@ function white(img,cx,cy,rx,ry) {
     img.data[k]=246;img.data[k+1]=247;img.data[k+2]=241;
   }
 }
-const t=(x,y,w,h)=>({inkRect:{x,y,width:w,height:h},rect:{x:x-4,y:y-4,width:w:w+8,height:h+8}});
+const t=(x,y,w,h)=>({inkRect:{x,y,width:w,height:h},rect:{x:x-4,y:y-4,width:w+8,height:h+8}});
 const shape=(x,y,w,h)=>({shape:"rounded",rect:{x,y,width:w,height:h}});
 function intersectsRun(runs,ink){
  return runs.some(([y,a,b])=>y>=ink.y&&y<ink.y+ink.height&&a<ink.x+ink.width&&b>ink.x);
