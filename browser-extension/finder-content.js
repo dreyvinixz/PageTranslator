@@ -110,6 +110,22 @@
         left: r.x + "px", top: r.y + "px", width: r.width + "px", height: r.height + "px"
       });
       outline.textContent = "";
+      if(c.maskPolygon?.length>=4) {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg","svg");
+        svg.setAttribute("viewBox","0 0 "+r.width+" "+r.height);
+        svg.style.cssText="position:fixed;pointer-events:none;overflow:visible;"+
+          "left:"+r.x+"px;top:"+r.y+"px;width:"+r.width+"px;height:"+r.height+"px";
+        const poly = document.createElementNS("http://www.w3.org/2000/svg","polygon");
+        poly.setAttribute("points",c.maskPolygon.map(([x,y])=>
+          (x-r.x).toFixed(1)+","+(y-r.y).toFixed(1)).join(" "));
+        poly.setAttribute("fill",c.risk?"rgba(241,84,111,.08)":"rgba(11,217,232,.08)");
+        poly.setAttribute("stroke",c.risk?"#f15b73":"#04e0e9");
+        poly.setAttribute("stroke-width","2");
+        svg.append(poly);
+        layer.append(svg);
+        outline.style.borderColor="transparent";
+        outline.style.background="transparent";
+      }
       outline.append(el("span", "pt-num", String(i + 1)));
       layer.append(outline);
     }
@@ -349,6 +365,94 @@
         " × " + Math.round(rect.height) + " pixels. Clique na caixa para inspecionar.");
     });
   }
+  async function readSelected(index) {
+    const c=items[index];
+    if(!c || ocrBusy || c.risk || !c.rect) return;
+    ocrBusy=true;
+    autoScanner.stop(); // Keep the chosen text while OCR is running.
+    const currentEpoch=++epoch;
+    const previousIndex=inspected;
+    render("Preparando recorte local: o OCR só recebe a região escolhida.");
+    try {
+      if(host)host.style.visibility="hidden";
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      const capture=await chrome.runtime.sendMessage({type:"PT_FINDER_CAPTURE"});
+      if(!capture?.ok || !capture.image)throw Error(capture?.error||"Captura não disponível.");
+      if(currentEpoch!==epoch) return;
+      const photo=new Image();
+      photo.src=capture.image;await photo.decode();
+      const ratioX=photo.naturalWidth/innerWidth,ratioY=photo.naturalHeight/innerHeight;
+      const r=c.rect;
+      const sx=Math.max(0,Math.floor(r.x*ratioX)),sy=Math.max(0,Math.floor(r.y*ratioY));
+      const sw=Math.min(photo.naturalWidth-sx,Math.ceil(r.width*ratioX));
+      const sh=Math.min(photo.naturalHeight-sy,Math.ceil(r.height*ratioY));
+      if(sw<12||sh<12)throw Error("Recorte fora dos limites da captura.");
+      const zoom=Math.min(2,1200/sw,1200/sh);
+      const cvs=document.createElement("canvas");
+      cvs.width=Math.max(1,Math.round(sw*zoom));
+      cvs.height=Math.max(1,Math.round(sh*zoom));
+      const ctx=cvs.getContext("2d",{willReadFrequently:true});
+      if(!ctx)throw Error("Canvas OCR indisponível.");
+      ctx.fillStyle="#fff";ctx.fillRect(0,0,cvs.width,cvs.height);
+      if(c.maskPolygon?.length>3){
+        ctx.save();ctx.beginPath();
+        c.maskPolygon.forEach(([x,y],i)=>{
+          const px=(x-r.x)*ratioX*zoom,py=(y-r.y)*ratioY*zoom;
+          if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
+        });
+        ctx.closePath();ctx.clip();
+      }
+      ctx.drawImage(photo,sx,sy,sw,sh,0,0,cvs.width,cvs.height);
+      if(c.maskPolygon?.length>3)ctx.restore();
+      const encoded=cvs.toDataURL("image/png");
+      cvs.width=cvs.height=0;photo.src="";
+      if(encoded.length>5_500_000)throw Error("Recorte grande demais: refine manualmente.");
+      if(host)host.style.visibility="visible";
+      const language=sourcePreference==="pt"?"por":
+        sourcePreference==="en"?"eng":"por+eng";
+      render("Executando OCR local de " + (language==="por+eng"?"português e inglês":language) + "…");
+      const result=await chrome.runtime.sendMessage({type:"PT_FINDER_OCR",image:encoded,language});
+      if(!result?.ok)throw Error(result?.error||"OCR não respondeu.");
+      if(!result.text?.trim())throw Error("Nenhuma palavra identificada. Refine o recorte.");
+      const detection=await Language.detect(result.text,sourcePreference);
+      if(currentEpoch!==epoch || !items.includes(c))return;
+      c.ocr={text:result.text,confidence:result.confidence,
+        language:detection.language,languageMethod:detection.method};
+      c.translation=null;
+      inspected=previousIndex;
+      render("OCR local concluído. Origem: " + detection.language +
+        ". Verifique a transcrição antes de traduzir.");
+    }catch(error){
+      if(currentEpoch===epoch)render("OCR indisponível: " + String(error.message||error));
+    }finally{
+      if(host)host.style.visibility="visible";
+      ocrBusy=false;
+      if(currentEpoch===epoch && state!=="closed")render(lastStatus);
+    }
+  }
+  async function translateSelected(index) {
+    const c=items[index];
+    if(!c?.ocr?.text||ocrBusy)return;
+    const source=sourcePreference==="auto"?c.ocr.language:sourcePreference;
+    const target=targetPreference;
+    if(source==="und"||!source) {
+      render("Idioma desconhecido: selecione manualmente Português ou Inglês.");return;
+    }
+    // Invoke immediately from click so model download retains browser user gesture.
+    let translation;
+    try{translation=Language.startTranslation(c.ocr.text,source,target);}
+    catch(error){render("Tradução indisponível: "+String(error.message||error));return;}
+    ocrBusy=true;
+    render("Traduzindo localmente " + source.toUpperCase() + " → " + target.toUpperCase() +
+      " (pode requerer download do pacote de idiomas)…");
+    try{
+      const result=await translation;
+      if(!items.includes(c))return;
+      c.translation=result;
+      render("Tradução concluída. Confira o texto original ao lado da tradução.");
+    }catch(error){render("Par indisponível ou download falhou: "+String(error.message||error));}
+    finally{ocrBusy=false;if(state!=="closed")render(lastStatus);}
+  }
   function cancelManual(message = "Seleção cancelada: regiões anteriores restauradas.") {
     if (state !== "select") return;
     if (manualRestore) {
@@ -516,8 +620,10 @@
     autoScanner.visibilityChanged();
   });
   // Read the preference from extension storage (not the comic website's storage).
-  chrome.storage.local.get({ finderShortcut: Shortcut.DEFAULT }).then(settings => {
+  chrome.storage.local.get({ finderShortcut: Shortcut.DEFAULT, sourcePreference:"auto", targetPreference:"en" }).then(settings => {
     if (Shortcut.valid(settings.finderShortcut)) shortcut = settings.finderShortcut;
+    if (["auto","pt","en"].includes(settings.sourcePreference)) sourcePreference=settings.sourcePreference;
+    if (Language.languages[settings.targetPreference]) targetPreference=settings.targetPreference;
     if (state !== "closed" && state !== "select" && !recordingShortcut) render();
   }).catch(error => console.warn("PageTranslator: atalho padrão preservado.", error));
 
