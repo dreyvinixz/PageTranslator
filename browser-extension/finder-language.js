@@ -22,7 +22,8 @@ function lexical(text){
 async function detect(text,preferred="auto",api=root) {
  if(preferred!=="auto")return {language:languages[preferred]?preferred:"und",
    confidence:1,method:"user-selected"};
- if(typeof api.LanguageDetector==="function"){
+ if(typeof api.LanguageDetector?.availability==="function" &&
+    typeof api.LanguageDetector?.create==="function"){
    try {
      const availability=await api.LanguageDetector.availability();
      if(availability==="available"){
