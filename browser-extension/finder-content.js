@@ -142,7 +142,7 @@
     logo.alt = "Logotipo PageTranslator";
     const brandText = el("div");
     brandText.append(el("div", "pt-brand-title", "PageTranslator"),
-      el("div", "pt-brand-sub", "FINDER 0.6.0 · PREVIEW"));
+      el("div", "pt-brand-sub", "FINDER 0.7.1 · PREVIEW"));
     brand.append(logo, brandText);
     head.append(brand);
     const close = button("×", stop, "pt-close");
