@@ -1,10 +1,28 @@
 {
   "manifest_version": 3,
-  "name": "PageTranslator Finder — Diagnóstico",
-  "version": "0.4.0",
-  "description": "Finder de quadrinhos com varredura automática na rolagem, sem OCR ou tradução.",
+  "name": "PageTranslator Finder — Preview",
+  "version": "0.5.0",
+  "description": "Finder de HQ: varredura automática, associação conservadora balão–texto e atalho personalizável; sem OCR ou tradução.",
   "minimum_chrome_version": "116",
-  "permissions": ["activeTab", "scripting"],
-  "background": { "service_worker": "background.js" },
-  "action": { "default_title": "PageTranslator Finder: manual ou identificar imagens" }
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "PageTranslator Finder: abrir e configurar"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "assets/logo.svg"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
 }
