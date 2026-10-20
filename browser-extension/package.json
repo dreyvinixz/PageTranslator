@@ -1,12 +1,12 @@
 {
   "name": "pagetranslator-browser",
   "private": true,
-  "version": "0.6.0",
-  "description": "PageTranslator OCR-local experimental instance masks with EN/PT recognition",
+  "version": "0.7.1",
+  "description": "Finder panel-scoped geometry and recoverable on-device OCR",
   "scripts": {
     "build": "node scripts/finder-build.mjs",
     "verify": "node scripts/finder-verify.mjs",
-    "test": "node --test tests/finder.test.mjs tests/finder-auto.test.mjs tests/finder-association.test.mjs tests/finder-instances.test.mjs tests/finder-language.test.mjs tests/finder-ocr-groups.test.mjs"
+    "test": "node --test tests/finder.test.mjs tests/finder-auto.test.mjs tests/finder-association.test.mjs tests/finder-instances.test.mjs tests/finder-language.test.mjs tests/finder-ocr-groups.test.mjs tests/finder-panels.test.mjs tests/finder-ocr-runtime.test.mjs"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "1.0.0",
