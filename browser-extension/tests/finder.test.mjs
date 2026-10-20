@@ -104,7 +104,7 @@ test("Finder preview avoids OCR and remote translation", () => {
   assert.match(content, /Genérico/);
   assert.match(content, /Quadrinhos/);
   assert.doesNotMatch(background + content, /Tesseract|PT_RECOGNIZE|PT_TRANSLATE_REMOTE|mymemory/i);
-  assert.deepEqual(manifest.permissions, ["activeTab", "scripting"]);
+  assert.deepEqual(manifest.permissions, ["activeTab", "scripting", "storage"]);
 });
 
 test("letter strokes on a bright caption yield one text-bearing region", () => {
@@ -202,7 +202,7 @@ test("Finder counts text regions independently from image elements", () => {
   const ui = readFileSync(join(root, "finder-content.js"), "utf8");
   assert.match(ui, /\["balloon-candidate", "text-region-candidate"\]\.includes\(c\.kind\)/);
   assert.match(ui, /markMixedInkRegions\(mapped\)/);
-  assert.match(ui, /PageTranslator · Finder 0\.4\.0/);
+  assert.match(ui, /FINDER 0\.5\.0/);
 });
 
 test("balloon fitter expands tightly cropped text to bright speech background", () => {
