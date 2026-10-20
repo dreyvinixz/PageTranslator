@@ -14,7 +14,7 @@ chrome.action.onClicked.addListener(async (tab) => {
   try {
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ["finder-core.js", "finder-text.js", "finder-fit.js", "finder-association.js", "finder-instances.js", "finder-language.js", "finder-shortcut.js", "finder-auto.js", "finder-content.js"]
+      files: ["finder-core.js", "finder-text.js", "finder-fit.js", "finder-association.js", "finder-instances.js", "finder-language.js", "finder-shortcut.js", "finder-auto.js", "regions.js", "finder-content.js"]
     });
     await chrome.tabs.sendMessage(tab.id, { type: "PT_FINDER_OPEN" });
   } catch (error) {
@@ -46,7 +46,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         target:"PT_OFFSCREEN",type:"PT_OCR_CROP",image:message.image,language:lang
       }),60000);
       if (!response?.ok) throw Error(response?.error || "OCR sem resultado.");
-      return {text:response.text,confidence:response.confidence};
+      return {text:response.text,confidence:response.confidence,lines:response.lines};
     })().then(x=>sendResponse({ok:true,...x}))
       .catch(e=>sendResponse({ok:false,error:String(e.message||e)}));
     return true;
