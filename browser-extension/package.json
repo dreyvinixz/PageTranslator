@@ -6,7 +6,7 @@
   "scripts": {
     "build": "node scripts/finder-build.mjs",
     "verify": "node scripts/finder-verify.mjs",
-    "test": "node --test tests/finder.test.mjs tests/finder-auto.test.mjs tests/finder-association.test.mjs tests/finder-instances.test.mjs tests/finder-language.test.mjs"
+    "test": "node --test tests/finder.test.mjs tests/finder-auto.test.mjs tests/finder-association.test.mjs tests/finder-instances.test.mjs tests/finder-language.test.mjs tests/finder-ocr-groups.test.mjs"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "1.0.0",
