@@ -6,37 +6,45 @@
   const TextDetector = globalThis.PageTranslatorTextCandidates;
   const BalloonFit = globalThis.PageTranslatorBalloonFit;
   const AutoScan = globalThis.PageTranslatorAutoScanner;
-  if (!Core || !TextDetector || !BalloonFit || !AutoScan) throw new Error("PageTranslator: módulos de detecção não foram carregados.");
+  const Association = globalThis.PageTranslatorAssociation;
+  const Shortcut = globalThis.PageTranslatorShortcut;
+  if (!Core || !TextDetector || !BalloonFit || !AutoScan || !Association || !Shortcut) throw new Error("PageTranslator: módulos de detecção não foram carregados.");
 
   let host = null, root = null, mode = "comic", state = "closed", epoch = 0;
   let items = [], inspected = null, lastMs = 0, lastStatus = "Pronto para identificar imagens.";
   // Scanner is event-driven (scroll/image/resize), not a background polling loop.
   let autoScanner = null;
+  let shortcut = Shortcut.DEFAULT, recordingShortcut = false;
+  let manualRestore = null;
 
   const css = [
     ":host{all:initial;position:fixed;inset:0;z-index:2147483646;font:13px/1.45 system-ui,sans-serif;pointer-events:none;color:#f6fbff}",
     "*{box-sizing:border-box}",
-    ".pt-menu{position:fixed;right:14px;bottom:14px;width:min(370px,calc(100vw - 28px));max-height:80vh;overflow-y:auto;background:#102239;color:#f4f8ff;border:1px solid #6187a9;border-radius:12px;padding:14px;box-shadow:0 9px 36px #0009;pointer-events:auto}",
-    ".pt-head{display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:15px;margin-bottom:7px}",
-    ".pt-sub{color:#baccdd;margin:0 0 10px;font-size:12px}",
-    ".pt-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}",
+    ".pt-menu{position:fixed;right:16px;bottom:16px;width:min(400px,calc(100vw - 32px));max-height:82vh;overflow-y:auto;background:linear-gradient(160deg,#10233b,#06182c 68%);color:#f4f8ff;border:1px solid #315575;border-radius:18px;padding:18px;box-shadow:0 16px 50px #000a;pointer-events:auto}",
+    ".pt-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}",
+    ".pt-brand{display:flex;align-items:center;gap:10px;min-width:0}.pt-logo{width:46px;height:46px;object-fit:contain;flex:none}.pt-brand-title{font-size:17px;font-weight:800;letter-spacing:-.4px;color:#f7fdff}.pt-brand-sub{font-size:11px;color:#78ddf1;font-weight:600}",
+    ".pt-section{margin-top:13px;font-size:11px;font-weight:750;letter-spacing:.07em;text-transform:uppercase;color:#8db5d6}",
+    ".pt-sub{color:#bfd1e3;margin:0 0 12px;font-size:12px;line-height:1.5}",
+    ".pt-row{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}",
     "button{font:inherit;padding:7px 9px;background:#274564;color:#f7fcff;border:1px solid #6f98b8;border-radius:8px;cursor:pointer}",
     "button:hover{background:#366484}button:focus-visible{outline:2px solid white;outline-offset:2px}",
     "button[aria-pressed=true]{background:#177dbf;border-color:#87d4ff}",
     ".pt-primary{background:#1680b8;border-color:#62addb}.pt-close{padding:1px 5px;background:transparent;border:0;font-size:20px}",
-    ".pt-status{padding:7px 9px;margin-top:10px;background:#263d55;border-radius:7px;white-space:pre-wrap;font-size:12px}",
+    ".pt-status{padding:10px 11px;margin-top:13px;background:#0b3043;border:1px solid #23546b;border-radius:10px;white-space:pre-wrap;font-size:12px}",
     ".pt-count{margin-top:9px;color:#a9e1ff;font-size:12px}",
     ".pt-rect{position:fixed;border:2px solid #21bbef;background:rgba(24,171,222,.09);pointer-events:auto;border-radius:5px;cursor:pointer;padding:0;box-shadow:0 0 0 1px #0b263e55}",
     ".pt-rect[data-kind=balloon-candidate],.pt-rect[data-kind=text-region-candidate]{border-color:#ffcb58;background:rgba(255,203,88,.11);border-style:dashed}",
     ".pt-num{position:absolute;left:0;top:0;padding:1px 5px;background:#006998;color:white;border-radius:3px;font:700 11px system-ui}",
     ".pt-rect[data-kind=balloon-candidate] .pt-num,.pt-rect[data-kind=text-region-candidate] .pt-num{background:#99631b}",
     ".pt-selected{outline:3px solid white;outline-offset:1px}",
+    ".pt-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:11px;color:#afd1e8;font-size:11px}.pt-key{font:700 12px ui-monospace,monospace;padding:3px 7px;border:1px solid #45738d;border-radius:6px;background:#16384b;color:#e3fbff}",
+    ".pt-rect[data-risk=mixing] .pt-num{background:#bd3345}",
     ".pt-rect[data-risk=mixing]{border-color:#ff6073;border-style:solid}",
     ".pt-layer{position:fixed;inset:0;pointer-events:none}",
     ".pt-select{position:fixed;inset:0;z-index:2;background:#0002;pointer-events:auto;cursor:crosshair;touch-action:none}",
-    ".pt-preview{position:absolute;border:2px solid #20d3ff;background:#09a9e52c;pointer-events:none}",
+    ".pt-preview{position:absolute;border:2px solid #20d3ff;background:#09a9e52c;pointer-events:none}.pt-preview[hidden]{display:none}",
     ".pt-tip{position:fixed;left:50%;top:14px;transform:translateX(-50%);padding:9px 12px;border-radius:9px;background:#102239;color:#fff;white-space:nowrap;font-size:13px;pointer-events:none;max-width:95vw}",
-    ".pt-details{white-space:pre-wrap;overflow-wrap:anywhere;background:#1c344b;padding:9px;border:1px solid #456581;border-radius:8px;margin-top:10px;font-size:12px}",
+    ".pt-details{white-space:pre-wrap;overflow-wrap:anywhere;background:#0c2a42;padding:12px;border:1px solid #345a75;border-radius:10px;margin-top:10px;font-size:12px;line-height:1.65}",
     ".pt-small{font-size:11px;color:#bbd1e5;margin-top:10px}"
   ].join("");
 
@@ -69,6 +77,7 @@
     state = "closed";
     if (host) host.remove();
     items = [];
+    recordingShortcut = false;
   }
   function button(text, handler, cls = "", pressed) {
     const b = el("button", cls, text);
@@ -101,12 +110,22 @@
     }
     const card = el("section", "pt-menu");
     const head = el("div", "pt-head");
-    head.append(el("span", "", "PageTranslator · Finder 0.4.0"));
-    head.append(button("×", stop, "pt-close"));
+    const brand = el("div", "pt-brand");
+    const logo = el("img", "pt-logo");
+    logo.src = chrome.runtime.getURL("assets/logo.svg");
+    logo.alt = "Logotipo PageTranslator";
+    const brandText = el("div");
+    brandText.append(el("div", "pt-brand-title", "PageTranslator"),
+      el("div", "pt-brand-sub", "FINDER 0.5.0 · PREVIEW"));
+    brand.append(logo, brandText);
+    head.append(brand);
+    const close = button("×", stop, "pt-close");
+    close.setAttribute("aria-label", "Fechar Finder");
+    head.append(close);
     card.append(head);
     card.append(el("p", "pt-sub",
       "Diagnóstico de regiões na tela. Esta versão NÃO executa OCR nem traduz."));
-    card.append(el("div", "", "Modo de detecção"));
+    card.append(el("div", "pt-section", "Modo de detecção"));
     const modes = el("div", "pt-row");
     modes.append(button("Genérico", () => changeMode("generic"), "", mode === "generic"));
     modes.append(button("Quadrinhos", () => changeMode("comic"), "", mode === "comic"));
@@ -126,6 +145,15 @@
         }
       }, "", autoScanner?.enabled));
     card.append(actions);
+    const keys = el("div", "pt-meta");
+    keys.append(el("span", "", "Atalho para ligar/desligar:"));
+    keys.append(el("kbd", "pt-key", shortcut));
+    keys.append(button(recordingShortcut ? "Pressione a combinação…" : "Personalizar",
+      () => {
+        recordingShortcut = true;
+        render("Pressione F2–F12 ou uma combinação com Ctrl, Alt, Shift ou Meta. Esc cancela.");
+      }));
+    card.append(keys);
     if (items.length) {
       const images = items.filter((c) => !["balloon-candidate", "text-region-candidate"].includes(c.kind)).length;
       const balloons = items.filter((c) => ["balloon-candidate", "text-region-candidate"].includes(c.kind)).length;
