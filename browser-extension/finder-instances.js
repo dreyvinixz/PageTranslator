@@ -49,6 +49,14 @@ function buildInstances(image, shapes, texts, options={}) {
     padded.y=Math.min(padded.y,Math.max(0,Math.floor(own.y)));
     padded.x2=Math.max(padded.x2,Math.min(w,Math.ceil(own.x+own.width)));
     padded.y2=Math.max(padded.y2,Math.min(h,Math.ceil(own.y+own.height)));
+    // Clip the mask search to a single comic panel; never leak across gutters.
+    if(good(t.panelRect)){
+      const p=t.panelRect;
+      padded.x=Math.max(padded.x,Math.floor(p.x));
+      padded.y=Math.max(padded.y,Math.floor(p.y));
+      padded.x2=Math.min(padded.x2,Math.ceil(p.x+p.width));
+      padded.y2=Math.min(padded.y2,Math.ceil(p.y+p.height));
+    }
     const runs=[],occupied=[];
     const extentX=Math.min(maxRadius,Math.max(20,own.width*.9));
     const extentY=Math.min(maxRadius,Math.max(15,own.height*2));
@@ -105,8 +113,8 @@ function buildInstances(image, shapes, texts, options={}) {
       sourceShapeId:associated<0?null:"shape-"+(associated+1),
       kind:source?.shape==="rectangular"?"caption":"speech-candidate",
       bbox:bounded, maskRuns:runs,maskPolygon:polygon,maskPixelCount:runs.reduce((sum,r)=>sum+r[2]-r[1],0),
-      splitFromConnectedShape:siblings.length>0, risk:Boolean(overlapsForeign||duplicate),
-      status:overlapsForeign||duplicate?"REVIEW_REQUIRED":"PROVISIONAL_INSTANCE",
+      splitFromConnectedShape:siblings.length>0, risk:Boolean(overlapsForeign||duplicate||t.panelRisk),
+      status:overlapsForeign||duplicate||t.panelRisk?"REVIEW_REQUIRED":"PROVISIONAL_INSTANCE",
       // Independent mask is a safer OCR crop than one shared white bbox.
       inkRect:own
     });
