@@ -9,7 +9,7 @@
 - `finder-content.js`: exibe contornos de máscara (com inspecção e seleção manual), e associa formas e textos no **mesmo sistema de coordenadas**.
 - `finder-offscreen.js`: reconhecimento sob demanda de somente o recorte escolhido, usando Tesseract.js + modelos PT e EN incluídos no ZIP. Operação local com tempo limite de resposta e memória de sessão, sem serviço OCR remoto. Máscaras limitam os pixels fornecidos ao OCR; recortes arriscados precisam de correção manual.
 - `finder-language.js`: detecção de idioma pelo LanguageDetector nativo quando disponível, fallback lexical conservador e opção manual. Seleção origem Auto/PT/EN e destino PT/EN/ES/FR. A seleção de destino **não garante disponibilidade**: Chrome/Edge podem não oferecer o modelo/pacote de idiomas local.
-- Botão **Traduzir localmente** verifica a API disponível em tempo de execução. Não há tradução remota automática nem transmissão para MyMemory.
+- Botão **Localizar textos por OCR**: realiza uma leitura local sob demanda da área visível, identifica linhas fora das regiões claras (importante no PDF), agrupa de forma conservadora e exibe regiões textuais independentes sem alegar que sejam balões. Pausa auto-scroll durante o OCR e não envia recortes a terceiros.\n- Botão **Traduzir localmente** verifica a API disponível em tempo de execução. Não há tradução remota automática nem transmissão para MyMemory.
 
 ## Avaliação inicial do PDF — realizada localmente
 
@@ -52,7 +52,7 @@ O script percorre todas as páginas, executa OCR somente nas 9 amostras informad
 
 1. Desativar extensão anterior; instalar ZIP v0.6.0 em Chrome/Edge. Abrir a página de referência e verificar mesmo comportamento do scroll.
 2. Confirmar que balões próximos recebem máscaras distintas. Se a máscara cortar palavras, refinar manualmente e anotar caso para os testes.
-3. Clicar **Ler texto (OCR local)** em balão português e inglês: validar resultado real sem misturar balões.
+3. Clicar **Localizar textos por OCR** para encontrar textos não detectados pelo Finder geométrico; conferir que linhas de balões vizinhos não se misturam. Depois clicar **Ler texto (OCR local)** em balão português e inglês: validar resultado real sem misturar balões.
 4. Conferir detecção PT/EN e escolha de tradução. Testar indisponibilidade da API, idioma desconhecido, mesmo idioma e primeiro download do modelo sob comando explícito.
 5. Testar consumo de memória, reconexão offscreen, zoom, HiDPI e CSP.
 6. Criar anotação ground-truth para páginas 5, 8, 9, 15, 16, 20, 21, 30 e 31 e medir `instance IoU`, `precision/recall`, atribuição de texto, OCR `CER/WER` e latência.
