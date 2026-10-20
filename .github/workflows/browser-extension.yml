@@ -50,6 +50,17 @@ jobs:
           node --check finder-offscreen.js
           node --check regions.js
           node --check finder-content.js
+      - name: Real Chrome smoke (panel geometry in browser)
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [[ -z "$CHROME" ]]; then echo 'Browser not installed'; exit 1; fi
+          "$CHROME" --headless=new --no-sandbox --disable-dev-shm-usage --disable-gpu --virtual-time-budget=4000 \\
+            --dump-dom "file://$GITHUB_WORKSPACE/browser-extension/tests/panels-browser-smoke.html" \\
+            > browser-smoke.html 2> browser-smoke.log
+          grep -q 'PASS_BROWSER_PANELS' browser-smoke.html
+          echo 'Panel geometry executed successfully in Chromium.'
       - name: Create preview ZIP
         shell: bash
         run: |
