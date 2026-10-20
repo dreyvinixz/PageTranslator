@@ -10,7 +10,8 @@
   const Shortcut = globalThis.PageTranslatorShortcut;
   const Instances = globalThis.PageTranslatorInstances;
   const Language = globalThis.PageTranslatorLanguage;
-  if (!Core || !TextDetector || !BalloonFit || !AutoScan || !Association || !Shortcut || !Instances || !Language) throw new Error("PageTranslator: módulos de detecção não foram carregados.");
+  const OCRRegions = globalThis.PageTranslatorRegions;
+  if (!Core || !TextDetector || !BalloonFit || !AutoScan || !Association || !Shortcut || !Instances || !Language || !OCRRegions) throw new Error("PageTranslator: módulos de detecção não foram carregados.");
 
   let host = null, root = null, mode = "comic", state = "closed", epoch = 0;
   let items = [], inspected = null, lastMs = 0, lastStatus = "Pronto para identificar imagens.";
@@ -154,6 +155,9 @@
     const actions = el("div", "pt-row");
     actions.append(button("Selecionar imagem (manual)", startManual, "pt-primary"));
     actions.append(button("Identificar imagens (Finder)", () => autoScanner.refresh(), "pt-primary"));
+    const scanOCR = button("Localizar textos por OCR", scanVisibleTextOCR, "pt-primary");
+    scanOCR.disabled = ocrBusy;
+    actions.append(scanOCR);
     actions.append(button(autoScanner?.enabled ? "Auto ao rolar: ligado" : "Auto ao rolar: pausado",
       () => {
         if (autoScanner.enabled) {
@@ -364,6 +368,85 @@
       render("Seleção marcada sem OCR: " + Math.round(rect.width) +
         " × " + Math.round(rect.height) + " pixels. Clique na caixa para inspecionar.");
     });
+  }
+  async function scanVisibleTextOCR() {
+    if (ocrBusy || state==="select" || mode!=="comic") return;
+    const selectedBefore=inspected;
+    const generation=++epoch;
+    autoScanner.stop(); // Explicit expensive OCR pass; never every scroll.
+    ocrBusy=true;
+    render("Capturando página visível para OCR local; auto-scroll temporariamente pausado.");
+    try {
+      if(host)host.style.visibility="hidden";
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      const shot=await chrome.runtime.sendMessage({type:"PT_FINDER_CAPTURE"});
+      if(!shot?.ok || !shot.image)throw Error(shot?.error||"Captura falhou.");
+      if(generation!==epoch)return;
+      const photo=new Image();photo.src=shot.image;await photo.decode();
+      const ratio=Math.min(1,1400/photo.naturalWidth,1400/photo.naturalHeight,
+        Math.sqrt(1800000/(photo.naturalWidth*photo.naturalHeight)));
+      const canvas=document.createElement("canvas");
+      canvas.width=Math.max(1,Math.floor(photo.naturalWidth*ratio));
+      canvas.height=Math.max(1,Math.floor(photo.naturalHeight*ratio));
+      const ctx=canvas.getContext("2d");
+      if(!ctx)throw Error("Canvas indisponível.");
+      ctx.drawImage(photo,0,0,canvas.width,canvas.height);
+      const width=canvas.width,height=canvas.height;
+      const encoded=canvas.toDataURL("image/jpeg",.84);
+      canvas.width=canvas.height=0;photo.src="";
+      if(host)host.style.visibility="visible";
+      render("Lendo português e inglês em todo o conteúdo visível. Aguarde…");
+      const output=await chrome.runtime.sendMessage({
+        type:"PT_FINDER_OCR",image:encoded,language:"por+eng"
+      });
+      if(!output?.ok)throw Error(output?.error||"OCR não respondeu.");
+      if(generation!==epoch)return;
+      const candidates=OCRRegions.groupLines(output.lines||[],24);
+      let added=0,updated=0;
+      function overlap(a,b){
+        const w=Math.max(0,Math.min(a.x+a.width,b.x+b.width)-Math.max(a.x,b.x));
+        const h=Math.max(0,Math.min(a.y+a.height,b.y+b.height)-Math.max(a.y,b.y));
+        return w*h;
+      }
+      for(const region of candidates){
+        const b=region.bbox;
+        const scaled={x:b.x0*innerWidth/width,y:b.y0*innerHeight/height,
+          width:(b.x1-b.x0)*innerWidth/width,
+          height:(b.y1-b.y0)*innerHeight/height};
+        if(scaled.width<12||scaled.height<7||scaled.width>innerWidth*.9)continue;
+        const match=items.find(i=>i.inkRect&&overlap(i.inkRect,scaled)/
+          Math.min(i.inkRect.width*i.inkRect.height,scaled.width*scaled.height)>.48);
+        const language=Language.lexical(region.text).language;
+        const ocr={text:region.text,confidence:region.confidence,language,
+          languageMethod:"lexicon-heuristic"};
+        if(match){
+          if(!match.ocr?.text){match.ocr=ocr;updated++;}
+          continue;
+        }
+        const margin=6;
+        items.push({
+          kind:"text-region-candidate",label:"Texto encontrado por OCR (balão não confirmado)",
+          status:"TEXT_ONLY",textGroupId:"ocr-text-"+(added+1),
+          inkRect:scaled,rect:{
+            x:Math.max(0,scaled.x-margin),y:Math.max(0,scaled.y-margin),
+            width:Math.min(innerWidth-scaled.x+margin,scaled.width+margin*2),
+            height:Math.min(innerHeight-scaled.y+margin,scaled.height+margin*2)
+          },ocr,balloonId:null,detectedLanguage:language,translationSupported:null,
+          reason:"OCR_TEXT_WITHOUT_CONFIRMED_BALLOON",risk:false
+        });
+        added++;
+        if(added>=24)break;
+      }
+      inspected=selectedBefore;
+      render("OCR local concluído: "+updated+" candidato(s) completado(s), "+added+
+        " região(ões) textual(is) adicional(is). Estas regiões NÃO são balões confirmados.");
+    }catch(error){
+      if(generation===epoch)render("Varredura OCR indisponível: "+String(error.message||error));
+    }finally{
+      if(host)host.style.visibility="visible";
+      ocrBusy=false;
+      if(generation===epoch&&state!=="closed")render(lastStatus);
+    }
   }
   async function readSelected(index) {
     const c=items[index];
