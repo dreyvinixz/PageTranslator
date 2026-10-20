@@ -78,3 +78,26 @@ Workflow `Browser Finder · Diagnostic Preview` publica o artifact
 `PageTranslator-Finder-v0.7.1-preview` em ZIP. Instale como extensão
 descompactada em Chrome/Edge. Desative a v0.6 antes de testar. Sem merge
 automático e sem release stable antes do QA real.
+
+
+## Reproduzir avaliação usando o algoritmo JavaScript real
+
+A v0.7.1 inclui `tools/qa_finder_v071.py` que renderiza o PDF em memória
+e passa os pixels RGBA ao processo Node `browser-extension/scripts/vision-evaluate.mjs`.
+Esse processo carrega os **mesmos módulos** `finder-core.js`,
+`finder-panels.js`, `finder-text.js`, `finder-fit.js` e
+`finder-instances.js` da extensão. Cada página retorna somente
+metadados (quantos painéis/candidatos, máscaras para revisão e tempo).
+**Não substitui anotações de referência nem executa o OCR por Tesseract.**
+
+```bash
+python -m pip install pymupdf numpy
+python tools/qa_finder_v071.py "/caminho/Batman-O-Cavaleiro.pdf" \
+  --pages 5,8,9,15,16,20,21,30,31 \
+  --output "./qa-output/v071.json"
+```
+
+Para comparação de versões, rode o mesmo comando e PDF nas branches
+anteriores e na v0.7.1, com conjuntos anotados. A checagem do código
+Node/Python é automatizada no CI; **o PDF real não integra o CI** devido
+aos direitos autorais e à ausência do arquivo nos runners.
