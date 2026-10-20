@@ -5,7 +5,7 @@ const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const dist = join(root, "dist");
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
-for (const name of ["manifest.json", "background.js", "finder-core.js", "finder-text.js", "finder-fit.js", "finder-association.js", "finder-instances.js", "finder-language.js", "finder-shortcut.js", "finder-auto.js", "finder-content.js", "finder-offscreen.js", "finder-offscreen.html"]) {
+for (const name of ["manifest.json", "background.js", "finder-core.js", "finder-text.js", "finder-fit.js", "finder-association.js", "finder-instances.js", "finder-language.js", "finder-shortcut.js", "finder-auto.js", "regions.js", "finder-content.js", "finder-offscreen.js", "finder-offscreen.html"]) {
   copyFileSync(join(root, name), join(dist, name));
 }
 mkdirSync(join(dist, "assets"), { recursive: true });
