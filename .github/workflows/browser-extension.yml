@@ -23,6 +23,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install local-only OCR dependencies
+        working-directory: browser-extension
+        run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
       - name: Test Finder heuristics
         working-directory: browser-extension
         run: npm test
@@ -38,19 +41,22 @@ jobs:
           node --check finder-auto.js
           node --check finder-association.js
           node --check finder-shortcut.js
+          node --check finder-instances.js
+          node --check finder-language.js
+          node --check finder-offscreen.js
           node --check finder-content.js
       - name: Create preview ZIP
         shell: bash
         run: |
           set -euo pipefail
           cd browser-extension/dist
-          zip -q -r "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.5.0-preview.zip" .
-          test -f "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.5.0-preview.zip"
-          unzip -t "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.5.0-preview.zip" >/dev/null
+          zip -q -r "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.6.0-preview.zip" .
+          test -f "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.6.0-preview.zip"
+          unzip -t "$GITHUB_WORKSPACE/PageTranslator-Finder-v0.6.0-preview.zip" >/dev/null
       - name: Upload Finder preview
         uses: actions/upload-artifact@v4
         with:
-          name: PageTranslator-Finder-v0.5.0-preview
-          path: PageTranslator-Finder-v0.5.0-preview.zip
+          name: PageTranslator-Finder-v0.6.0-preview
+          path: PageTranslator-Finder-v0.6.0-preview.zip
           if-no-files-found: error
           retention-days: 30
