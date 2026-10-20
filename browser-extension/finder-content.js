@@ -9,9 +9,10 @@
   const Association = globalThis.PageTranslatorAssociation;
   const Shortcut = globalThis.PageTranslatorShortcut;
   const Instances = globalThis.PageTranslatorInstances;
+  const Panels = globalThis.PageTranslatorPanels;
   const Language = globalThis.PageTranslatorLanguage;
   const OCRRegions = globalThis.PageTranslatorRegions;
-  if (!Core || !TextDetector || !BalloonFit || !AutoScan || !Association || !Shortcut || !Instances || !Language || !OCRRegions) throw new Error("PageTranslator: módulos de detecção não foram carregados.");
+  if (!Core || !TextDetector || !BalloonFit || !AutoScan || !Association || !Shortcut || !Instances || !Panels || !Language || !OCRRegions) throw new Error("PageTranslator: módulos de detecção não foram carregados.");
 
   let host = null, root = null, mode = "comic", state = "closed", epoch = 0;
   let items = [], inspected = null, lastMs = 0, lastStatus = "Pronto para identificar imagens.";
@@ -20,6 +21,7 @@
   let shortcut = Shortcut.DEFAULT, recordingShortcut = false;
   let manualRestore = null;
   let ocrBusy = false, sourcePreference = "auto", targetPreference = "en";
+  let lastPanels = [], lastOCRDiagnostics = null;
 
   const css = [
     ":host{all:initial;position:fixed;inset:0;z-index:2147483646;font:13px/1.45 system-ui,sans-serif;pointer-events:none;color:#f6fbff}",
@@ -83,6 +85,7 @@
     state = "closed";
     if (host) host.remove();
     items = [];
+    lastPanels=[];
     recordingShortcut = false;
   }
   function button(text, handler, cls = "", pressed) {
@@ -99,6 +102,7 @@
     shadow.append(layer);
     for (let i = 0; i < items.length; i++) {
       const c = items[i], r = c.rect;
+      if(mode==="comic" && !["text-region-candidate","balloon-candidate"].includes(c.kind))continue;
       const outline = button(String(i + 1), () => {
         inspected = i;
         render("Região #" + (i + 1) + " selecionada. Confira as informações abaixo.");
@@ -219,6 +223,8 @@
         "Grupos de texto vizinhos: " + neighbors + "\n" +
         "Idioma do texto: " + (c.ocr?.language || "ainda não identificado") + "\n" +
         "Tradução: " + (c.translation ? "disponível neste par" : "ainda não verificada") + "\n" +
+        (c.panelId ? "Quadro atribuído: "+c.panelId+"\n":"") +
+        (lastOCRDiagnostics ? "OCR: preparação "+lastOCRDiagnostics.initMs+" ms · reconhecimento "+lastOCRDiagnostics.ocrMs+" ms\n":"") +
         (c.maskPixelCount ? "Máscara da instância: " + c.maskPixelCount + " pixels\n" : "") +
         "Recorte: X " + Math.round(r.x) + " · Y " + Math.round(r.y) +
           " · " + Math.round(r.width) + " × " + Math.round(r.height) + "\n" +
@@ -380,7 +386,7 @@
       if(host)host.style.visibility="hidden";
       await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
       const shot=await chrome.runtime.sendMessage({type:"PT_FINDER_CAPTURE"});
-      if(!shot?.ok || !shot.image)throw Error(shot?.error||"Captura falhou.");
+      if(!shot?.ok || !shot.image)throw Error((shot?.code?"["+shot.code+"] ":"")+(shot?.error||"Captura falhou."));
       if(generation!==epoch)return;
       const photo=new Image();photo.src=shot.image;await photo.decode();
       const ratio=Math.min(1,1400/photo.naturalWidth,1400/photo.naturalHeight,
@@ -399,9 +405,21 @@
       const output=await chrome.runtime.sendMessage({
         type:"PT_FINDER_OCR",image:encoded,language:"por+eng"
       });
-      if(!output?.ok)throw Error(output?.error||"OCR não respondeu.");
+      if(!output?.ok)throw Error((output?.code?"["+output.code+"] ":"")+(output?.error||"OCR não respondeu."));
       if(generation!==epoch)return;
-      const candidates=OCRRegions.groupLinesConservative(output.lines||[],24);
+      lastOCRDiagnostics=output.diagnostics||null;
+      // OCR lines never group across detected comic panels.
+      const sourceLines=output.lines||[];
+      const panelGroups=lastPanels.length?lastPanels.map(p=>sourceLines.filter(line=>{
+        const b=line.bbox;
+        if(!b)return false;
+        const px=((b.x0+b.x1)/2)*innerWidth/width;
+        const py=((b.y0+b.y1)/2)*innerHeight/height;
+        return px>=p.rect.x && px<p.rect.x+p.rect.width &&
+          py>=p.rect.y && py<p.rect.y+p.rect.height;
+      })):[sourceLines];
+      const candidates=panelGroups.flatMap(group=>
+        OCRRegions.groupLinesConservative(group,24)).slice(0,30);
       let added=0,updated=0;
       function overlap(a,b){
         const w=Math.max(0,Math.min(a.x+a.width,b.x+b.width)-Math.max(a.x,b.x));
@@ -460,7 +478,7 @@
       if(host)host.style.visibility="hidden";
       await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
       const capture=await chrome.runtime.sendMessage({type:"PT_FINDER_CAPTURE"});
-      if(!capture?.ok || !capture.image)throw Error(capture?.error||"Captura não disponível.");
+      if(!capture?.ok || !capture.image)throw Error((capture?.code?"["+capture.code+"] ":"")+(capture?.error||"Captura não disponível."));
       if(currentEpoch!==epoch) return;
       const photo=new Image();
       photo.src=capture.image;await photo.decode();
@@ -495,7 +513,8 @@
         sourcePreference==="en"?"eng":"por+eng";
       render("Executando OCR local de " + (language==="por+eng"?"português e inglês":language) + "…");
       const result=await chrome.runtime.sendMessage({type:"PT_FINDER_OCR",image:encoded,language});
-      if(!result?.ok)throw Error(result?.error||"OCR não respondeu.");
+      if(!result?.ok)throw Error((result?.code?"["+result.code+"] ":"")+(result?.error||"OCR não respondeu."));
+      lastOCRDiagnostics=result.diagnostics||null;
       if(!result.text?.trim())throw Error("Nenhuma palavra identificada. Refine o recorte.");
       const detection=await Language.detect(result.text,sourcePreference);
       if(currentEpoch!==epoch || !items.includes(c))return;
@@ -568,14 +587,10 @@
       const currentHost = host;
       if (currentHost) currentHost.style.visibility = "hidden";
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const timeout = new Promise((_, reject) => setTimeout(
-        () => reject(new Error("Tempo limite da captura (7 segundos).")), 7000));
-      const screenshot = await Promise.race([
-        chrome.runtime.sendMessage({ type: "PT_FINDER_CAPTURE" }), timeout
-      ]);
+      const screenshot = await chrome.runtime.sendMessage({ type: "PT_FINDER_CAPTURE" });
       if (currentHost) currentHost.style.visibility = "visible";
       if (!screenshot?.ok || typeof screenshot.image !== "string") {
-        throw new Error(screenshot?.error || "Captura não retornou uma imagem.");
+        throw new Error((screenshot?.code?"["+screenshot.code+"] ":"")+(screenshot?.error || "Captura não retornou uma imagem."));
       }
       if (thisScan !== epoch) return;
       const image = new Image();
@@ -597,10 +612,37 @@
         x: p.rect.x * scaleX, y: p.rect.y * scaleY,
         width: p.rect.width * scaleX, height: p.rect.height * scaleY
       }));
-      const shapes = Core.findLightRegions(data, allowed, { limit: 20 });
-      const inkCandidates = TextDetector.findTextCandidates(data, allowed, { limit: 12 });
-      const instances = Instances.buildInstances(data, shapes, inkCandidates);
-      const balloons = BalloonFit.refineSpeechRegions(data, inkCandidates, { limit: 12 });
+      // First detect panel gutters; then keep ink, masks and shapes in the panel.
+      // The fallback is the image element when no reliable gutter exists.
+      const panels=Panels.findPanels(data,allowed,{maxDepth:4}).slice(0,12);
+      const limitedPanels=panels.length?panels:allowed.slice(0,8).map((rect,i)=>({
+        id:"panel-"+(i+1),rect
+      }));
+      lastPanels=limitedPanels.map(p=>({id:p.id,rect:{
+        x:p.rect.x/scaleX,y:p.rect.y/scaleY,
+        width:p.rect.width/scaleX,height:p.rect.height/scaleY
+      }}));
+      const originalShapes=Core.findLightRegions(data,allowed,{limit:20});
+      const shapes=limitedPanels.flatMap(p=>originalShapes.map(s=>{
+        const piece=Panels.intersect(s.rect,p.rect);
+        return piece && piece.width*piece.height>=220 ?
+          {...s,rect:piece,panelId:p.id}:null;
+      }).filter(Boolean)).slice(0,36);
+      const inkCandidates=limitedPanels.flatMap(p=>
+        TextDetector.findTextCandidates(data,[p.rect],{limit:8})
+          .map(t=>({...t,panelId:p.id,panelRect:p.rect}))
+      ).filter((t,i,a)=>!a.some((other,j)=>j<i &&
+        Core.overlapArea(t.inkRect,other.inkRect)/
+          Math.min(t.inkRect.width*t.inkRect.height,
+            other.inkRect.width*other.inkRect.height)>.80)).slice(0,20);
+      const bounded=Panels.confineTextToPanels(inkCandidates,limitedPanels);
+      const instances=Instances.buildInstances(data,shapes,bounded);
+      const balloons=BalloonFit.refineSpeechRegions(data,bounded,{limit:20})
+        .map(c=>{const panel=limitedPanels.find(p=>p.id===c.panelId);
+          if(!panel)return {...c,panelRisk:true};
+          const rect=Panels.intersect(c.rect,panel.rect);
+          return {...c,rect:rect||c.rect,panelRisk:c.panelRisk||!rect};
+        });
       if (thisScan !== epoch) return;
       const mapped = balloons.map((c) => {
         const area = c.rect.width * c.rect.height;
@@ -625,7 +667,7 @@
       }; });
       // Rectangular label overlap is okay; collision of unpadded ink is not.
       const safeCandidates = Core.markMixedInkRegions(mapped).map((c) => ({
-        ...c, risk: c.risk || c.fitRisk
+        ...c, risk: c.risk || c.fitRisk || c.panelRisk
       }));
       // Both inputs must share viewport coordinates: old v0.5 passed downscaled
       // shape boxes against CSS-pixel text boxes and lost valid associations.
@@ -645,9 +687,9 @@
           balloonId:instance.id,
           // Old bbox contamination can be eliminated by an isolated mask.
           // Never suppress genuine ink overlap or two competing shapes.
-          status:(instance.risk || ["INK_OVERLAP","MULTIPLE_BALLOON_CANDIDATES"].includes(c.reason))
+          status:(instance.risk || c.panelRisk || ["INK_OVERLAP","MULTIPLE_BALLOON_CANDIDATES"].includes(c.reason))
             ?"REVIEW_REQUIRED":"PROVISIONAL_INSTANCE",
-          risk:Boolean(instance.risk ||
+          risk:Boolean(instance.risk || c.panelRisk ||
             ["INK_OVERLAP","MULTIPLE_BALLOON_CANDIDATES"].includes(c.reason)),
           reason:instance.splitFromConnectedShape && !instance.risk &&
             !["INK_OVERLAP","MULTIPLE_BALLOON_CANDIDATES"].includes(c.reason)
@@ -660,7 +702,8 @@
           c.balloonHypothesis === "caption" ? "Possível caixa narrativa com texto" :
           "Texto em região visual ainda não classificada"
       }; });
-      items = [...items, ...assigned].slice(0, 28);
+      items = [...items.filter(x=>x.kind==="manual"), ...assigned].slice(0,28);
+      // Do not render giant DOM image bounds as if they were comic balloons.
       lastMs = Math.round(performance.now() - start);
       render("Finder Quadrinhos: falas candidatas isoladas. Atualização automática durante a leitura. Vermelho = revisão necessária. Clique na caixa para OCR local sob demanda.");
     } catch (e) {
@@ -680,6 +723,7 @@
     const hadRegions = items.length > 0 || inspected !== null;
     items = [];
     inspected = null;
+    lastPanels=[];
     if (hadRegions || (autoScanner?.busy && !lastStatus.startsWith("Conteúdo mudou"))) {
       render(reason === "hidden" ? "Aba em segundo plano: leitura suspensa." :
         "Conteúdo mudou; aguardando a rolagem terminar para identificar novamente…");
