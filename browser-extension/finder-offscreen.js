@@ -31,9 +31,10 @@ async function recognize(image,lang){
   photo.src="";
   try{
     const worker=await initWorker(lang);
-    const answer=await worker.recognize(canvas);
+    const answer=await worker.recognize(canvas,{}, {blocks:true});
     return {text:String(answer.data?.text||"").trim().slice(0,4000),
-      confidence:Number(answer.data?.confidence||0)};
+      confidence:Number(answer.data?.confidence||0),
+      lines:PageTranslatorRegions.collectLines(answer.data?.blocks,1,1,canvas.width,canvas.height)};
   }finally{canvas.width=0;canvas.height=0;}
 }
 chrome.runtime.onMessage.addListener((m,_sender,respond)=>{
