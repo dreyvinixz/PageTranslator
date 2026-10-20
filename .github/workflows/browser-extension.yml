@@ -44,6 +44,7 @@ jobs:
           node --check finder-instances.js
           node --check finder-language.js
           node --check finder-offscreen.js
+          node --check regions.js
           node --check finder-content.js
       - name: Create preview ZIP
         shell: bash
