@@ -202,7 +202,7 @@ test("Finder counts text regions independently from image elements", () => {
   const ui = readFileSync(join(root, "finder-content.js"), "utf8");
   assert.match(ui, /\["balloon-candidate", "text-region-candidate"\]\.includes\(c\.kind\)/);
   assert.match(ui, /markMixedInkRegions\(mapped\)/);
-  assert.match(ui, /FINDER 0\.6\.0/);
+  assert.match(ui, /FINDER 0\.7\.1/);
 });
 
 test("balloon fitter expands tightly cropped text to bright speech background", () => {
