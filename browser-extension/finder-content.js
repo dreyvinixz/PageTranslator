@@ -560,8 +560,15 @@
           maskPolygon:instance.maskPolygon.map(([x,y])=>[x/scaleX,y/scaleY]),
           splitFromConnectedShape:instance.splitFromConnectedShape,
           balloonId:instance.id,
-          status:(c.risk||instance.risk)?"REVIEW_REQUIRED":"PROVISIONAL_INSTANCE",
-          risk:Boolean(c.risk||instance.risk),
+          // Old bbox contamination can be eliminated by an isolated mask.
+          // Never suppress genuine ink overlap or two competing shapes.
+          status:(instance.risk || ["INK_OVERLAP","MULTIPLE_BALLOON_CANDIDATES"].includes(c.reason))
+            ?"REVIEW_REQUIRED":"PROVISIONAL_INSTANCE",
+          risk:Boolean(instance.risk ||
+            ["INK_OVERLAP","MULTIPLE_BALLOON_CANDIDATES"].includes(c.reason)),
+          reason:instance.splitFromConnectedShape && !instance.risk &&
+            !["INK_OVERLAP","MULTIPLE_BALLOON_CANDIDATES"].includes(c.reason)
+              ?"SEPARATED_BY_SEEDED_MASK":c.reason,
           rect:{x:instance.bbox.x/scaleX,y:instance.bbox.y/scaleY,
             width:instance.bbox.width/scaleX,height:instance.bbox.height/scaleY}
         }:{}),
