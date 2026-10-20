@@ -18,7 +18,7 @@ const deps=(...p)=>join(root,"node_modules",...p);
 copyFileSync(deps("tesseract.js","dist","tesseract.min.js"),join(vendor,"tesseract.min.js"));
 copyFileSync(deps("tesseract.js","dist","worker.min.js"),join(vendor,"worker.min.js"));
 const wasmRoot=deps("tesseract.js-core");
-const wasmFiles=readdirSync(wasmRoot).filter(x=>/^tesseract-core.*\\.(wasm|js)$/.test(x));
+const wasmFiles=readdirSync(wasmRoot).filter(x=>new RegExp("tesseract-core.*[.](wasm|js)$").test(x));
 if(!wasmFiles.length)throw Error("Tesseract WebAssembly not installed.");
 for(const file of wasmFiles)copyFileSync(join(wasmRoot,file),join(vendor,"core",file));
 for(const language of ["por","eng"]) {
